@@ -1,6 +1,6 @@
 --[[
 ╔══════════════════════════════════════════════════════════════════╗
-║               ASPECT UI LIBRARY  v11.0                          ║
+║               PELECCOS SOFTWARES  v11.0                          ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  LAYOUT:                                                         ║
 ║    SIDEBAR (left): Categories + Tabs with icon              ║
@@ -213,14 +213,14 @@ end
 -- ════════════════════════════════════════════════
 --  LIBRARY
 -- ════════════════════════════════════════════════
-local Aspect={}; Aspect.__index=Aspect
-Aspect.Events=EvBus
+local Peleccos={}; Peleccos.__index=Peleccos
+Peleccos.Events=EvBus
 
-function Aspect:CreateWindow(o)
+function Peleccos:CreateWindow(o)
     o=o or {}
     -- destroy any existing instance to prevent duplicates
-    pcall(function() local x=game:GetService("CoreGui"):FindFirstChild("AspectUI"); if x then x:Destroy() end end)
-    pcall(function() local pg=LP:FindFirstChild("PlayerGui"); if pg then local x=pg:FindFirstChild("AspectUI"); if x then x:Destroy() end end end)
+    pcall(function() local x=game:GetService("CoreGui"):FindFirstChild("PeleccosUI"); if x then x:Destroy() end end)
+    pcall(function() local pg=LP:FindFirstChild("PlayerGui"); if pg then local x=pg:FindFirstChild("PeleccosUI"); if x then x:Destroy() end end end)
 
     local AC  = o.AccentColor or Color3.fromRGB(80,80,92)
     local ACD = dk(AC,.72)
@@ -236,7 +236,7 @@ function Aspect:CreateWindow(o)
     local KEY  = o.Key or Enum.KeyCode.Insert
 
     -- ── ScreenGui ──────────────────────────
-    local SG=new("ScreenGui",{Name="AspectUI",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
+    local SG=new("ScreenGui",{Name="PeleccosUI",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
     local _parentGui = (typeof(gethui)=="function" and gethui()) or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) or LP:WaitForChild("PlayerGui")
     SG.Parent = _parentGui
     _OVR=new("Frame",{Name="OvRoot",Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,ZIndex=200,Parent=SG})
@@ -256,7 +256,7 @@ function Aspect:CreateWindow(o)
     -- Logo (alinhado com a sidebar)
     local LB=new("Frame",{Size=UDim2.new(0,SW,1,0),BackgroundTransparency=1,ZIndex=12,Parent=TOPBAR})
     local LI=new("ImageLabel",{Size=UDim2.new(0,28,0,28),Position=UDim2.new(0,10,.5,-14),BackgroundColor3=C.BtnHover,Image=o.Logo or "rbxassetid://0",ZIndex=13,Parent=LB}); cor(LI,UDim.new(0,7))
-    new("TextLabel",{Text=o.Title or "Aspect",Size=UDim2.new(1,-46,1,0),Position=UDim2.new(0,44,0,0),BackgroundTransparency=1,TextColor3=C.TxtOn,TextSize=15,Font=_FONTBOLD,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=13,Parent=LB})
+    new("TextLabel",{Text=o.Title or "Peleccos",Size=UDim2.new(1,-46,1,0),Position=UDim2.new(0,44,0,0),BackgroundTransparency=1,TextColor3=C.TxtOn,TextSize=15,Font=_FONTBOLD,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=13,Parent=LB})
 
     -- Search bar (top right)
     local SF=new("Frame",{Size=UDim2.new(0,120,0,28),Position=UDim2.new(1,-126,.5,-14),BackgroundColor3=C.BtnOff,ZIndex=12,Parent=TOPBAR}); cor(SF,UDim.new(0,8)); str(SF,C.Border)
@@ -320,7 +320,7 @@ function Aspect:CreateWindow(o)
     -- ════════════════════════════════════════
     --  WINDOW OBJECT
     -- ════════════════════════════════════════
-    local WO={_tabs={},_activeTab=nil,Notify=notify,Events=Aspect.Events}
+    local WO={_tabs={},_activeTab=nil,Notify=notify,Events=Peleccos.Events}
     local _toggleRegistry={} -- flag -> {val, setFn, trackFrame, knobFrame}
 
     local _vis=true
@@ -602,7 +602,7 @@ function Aspect:CreateWindow(o)
                 lst(items,Enum.FillDirection.Vertical,4); pad(items,8,10,10,10)
 
                 local S={_i=items,_allEls=_els,_tn=tname,_stn=stname,_gn=gname}
-                local function fire(tp,nm,vl) Aspect.Events:Fire({Type=tp,Name=nm,Value=vl,Tab=tname,SubTab=stname,Section=gname}) end
+                local function fire(tp,nm,vl) Peleccos.Events:Fire({Type=tp,Name=nm,Value=vl,Tab=tname,SubTab=stname,Section=gname}) end
                 local function toast(op) if op.Toast then notify({Title=op.ToastTitle or op.Name or "Action",Desc=op.ToastDesc or op.ToastDescription or "",Type=op.ToastType or "Info",Duration=op.ToastDuration or 3}) end end
 
                 -- ── LABEL ─────────────────
@@ -1001,7 +1001,7 @@ function Aspect:CreateWindow(o)
                 if v then pcall(function() game:GetService("VirtualUser"):Button2Down(Vector2.new(0,0),CFrame.new()) end) end
             end })
         local SecInfo = SubSec:AddSection({ Name = "Info", Side = "right" })
-        SecInfo:AddLabel({ Text = "AspectLib v11.0", Color = Color3.fromRGB(130,130,145), Size = 13 })
+        SecInfo:AddLabel({ Text = "Peleccos Softwares v11.0", Color = Color3.fromRGB(130,130,145), Size = 13 })
         SecInfo:AddSeparator()
         SecInfo:AddLabel({ Text = "Automatic configuration tab.", Color = Color3.fromRGB(70,70,80), Size = 11 })
     end) -- task.defer
@@ -1009,4 +1009,4 @@ function Aspect:CreateWindow(o)
     return WO
 end
 
-return Aspect
+return Peleccos
