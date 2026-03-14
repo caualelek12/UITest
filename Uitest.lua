@@ -3,18 +3,73 @@
 ║               PELECCOS SOFTWARES  v11.0                          ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  LAYOUT:                                                         ║
-║    SIDEBAR (left): Categories + Tabs with icon              ║
-║    CONTENT (right): SubTabs on top + Sections below        ║
+║    SIDEBAR (left): Categories + Tabs with icon                  ║
+║    CONTENT (right): SubTabs on top + Sections below             ║
 ║                                                                  ║
-║  Win:AddCategory("Nome")          → text separator          ║
-║  Win:AddTab({ Name, Icon })       → sidebar button            ║
-║  Tab:AddSubTab({ Name })          → button on top of content   ║
+║  Win:AddCategory("Name")          → text separator              ║
+║  Win:AddTab({ Name, Icon })       → sidebar button              ║
+║  Tab:AddSubTab({ Name })          → button on top of content    ║
 ║  SubTab:AddSection({ Name, Side})                               ║
 ║  Sec:AddToggle / AddSlider / AddButton / AddTextbox /           ║
 ║      AddDropdown / AddColorPicker / AddKeybind /                ║
 ║      AddLabel / AddSeparator / AddProgressBar                   ║
 ╚══════════════════════════════════════════════════════════════════╝
 ]]
+
+-- ════════════════════════════════════════════════
+--  SILENT ERROR LOGGER
+-- ════════════════════════════════════════════════
+local _FOLDER = "PeleccosSoftwares"
+local _ERROR_FILE = _FOLDER .. "/errors.txt"
+
+pcall(function()
+    if not isfolder(_FOLDER) then makefolder(_FOLDER) end
+end)
+
+local function logError(err)
+    pcall(function()
+        local existing = ""
+        if isfile(_ERROR_FILE) then existing = readfile(_ERROR_FILE) end
+        local line = os.date("[%d/%m/%Y %H:%M:%S] ") .. tostring(err) .. "\n"
+        writefile(_ERROR_FILE, existing .. line)
+    end)
+end
+
+-- ════════════════════════════════════════════════
+--  IMAGE LOADER  (caches images to PeleccosSoftwares/images/)
+-- ════════════════════════════════════════════════
+local _IMG_FOLDER = _FOLDER .. "/images"
+pcall(function()
+    if not isfolder(_IMG_FOLDER) then makefolder(_IMG_FOLDER) end
+end)
+
+local function loadImage(assetId, imageLabel)
+    pcall(function()
+        if not imageLabel or not imageLabel.Parent then return end
+        -- Try to use getcustomasset for cached loading if available
+        local filename = _IMG_FOLDER .. "/" .. tostring(assetId):gsub("[^%w]", "_") .. ".png"
+        if typeof(getcustomasset) == "function" then
+            if not isfile(filename) then
+                -- Download and cache
+                local ok, data = pcall(function()
+                    return game:HttpGet("https://assetdelivery.roblox.com/v1/asset/?id=" .. tostring(assetId):match("%d+") or tostring(assetId))
+                end)
+                if ok and data and #data > 0 then
+                    pcall(function() writefile(filename, data) end)
+                end
+            end
+            if isfile(filename) then
+                local ok, asset = pcall(getcustomasset, filename)
+                if ok and asset then
+                    imageLabel.Image = asset
+                    return
+                end
+            end
+        end
+        -- Fallback: use rbxassetid directly
+        imageLabel.Image = "rbxassetid://" .. tostring(assetId):match("%d+") or tostring(assetId)
+    end)
+end
 
 local Players      = game:GetService("Players")
 local UIS          = game:GetService("UserInputService")
@@ -221,6 +276,8 @@ function Peleccos:CreateWindow(o)
     -- destroy any existing instance to prevent duplicates
     pcall(function() local x=game:GetService("CoreGui"):FindFirstChild("PeleccosUI"); if x then x:Destroy() end end)
     pcall(function() local pg=LP:FindFirstChild("PlayerGui"); if pg then local x=pg:FindFirstChild("PeleccosUI"); if x then x:Destroy() end end end)
+    pcall(function() if typeof(gethui)=="function" then local x=gethui():FindFirstChild("PeleccosUI"); if x then x:Destroy() end end end)
+    logError("PeleccosSoftwares UI loaded - " .. os.date())
 
     local AC  = o.AccentColor or Color3.fromRGB(80,80,92)
     local ACD = dk(AC,.72)
@@ -1009,4 +1066,5 @@ function Peleccos:CreateWindow(o)
     return WO
 end
 
+logError("PeleccosSoftwares module initialized")
 return Peleccos
