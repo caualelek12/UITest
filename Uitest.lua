@@ -317,7 +317,7 @@ function Peleccos:CreateWindow(o)
 
     -- Search bar (top right)
     local SF=new("Frame",{Size=UDim2.new(0,120,0,28),Position=UDim2.new(1,-126,.5,-14),BackgroundColor3=C.BtnOff,ZIndex=12,Parent=TOPBAR}); cor(SF,UDim.new(0,8)); str(SF,C.Border)
-    new("TextLabel",{Text="🔍",Size=UDim2.new(0,18,1,0),Position=UDim2.new(0,6,0,0),BackgroundTransparency=1,TextColor3=C.TxtOff,TextSize=11,Font=_FONT,ZIndex=13,Parent=SF})
+    new("TextLabel",{Text="",Size=UDim2.new(0,18,1,0),Position=UDim2.new(0,6,0,0),BackgroundTransparency=1,TextColor3=C.TxtOff,TextSize=11,Font=_FONT,ZIndex=13,Parent=SF})
     local SBX=new("TextBox",{Text="",PlaceholderText="Search",Size=UDim2.new(1,-26,1,0),Position=UDim2.new(0,22,0,0),BackgroundTransparency=1,TextColor3=C.TxtOn,PlaceholderColor3=C.TxtOff,TextSize=11,Font=_FONT,TextXAlignment=Enum.TextXAlignment.Left,ClearTextOnFocus=false,ZIndex=13,Parent=SF})
     SBX.Focused:Connect(function() tw(SF,{BackgroundColor3=C.BtnHover},.12) end)
     SBX.FocusLost:Connect(function() tw(SF,{BackgroundColor3=C.BtnOff},.12) end)
