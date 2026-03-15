@@ -292,6 +292,9 @@ function Peleccos:CreateWindow(o)
     local UCH  = 58     -- user card height
     local KEY  = o.Key or Enum.KeyCode.Insert
 
+    -- apply default font if provided
+    if o.Font then setFont(o.Font) end
+
     -- ── ScreenGui ──────────────────────────
     local SG=new("ScreenGui",{Name="PeleccosUI",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
     local _parentGui = (typeof(gethui)=="function" and gethui()) or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) or LP:WaitForChild("PlayerGui")
