@@ -977,109 +977,53 @@ function Peleccos:CreateWindow(o)
         SecInfo:AddLabel({ Text = "Automatic configuration tab.", Color = Color3.fromRGB(70,70,80), Size = 11 })
 
         -- ── Built-in Config Save/Load ─────────────────────────────────────
-        -- Works with any script that uses this lib without any extra code.
-        -- Saves/loads all Toggle and Slider values by their Name+Section key.
-        local CFG_FOLDER = "PeleccosSoftwares"
-        local CFG_FILE   = CFG_FOLDER .. "/ui_config.json"
-        local _cfgData   = {}  -- name → value
+        local HS           = game:GetService("HttpService")
+        local CFG_FOLDER   = "PeleccosSoftwares"
+        local PRF_FOLDER   = CFG_FOLDER .. "/configs"
+        local _autoSave    = true
+        local _curProfile  = "default"
+        local _cfgData     = {}
 
-        local function cfgSave()
-            pcall(function()
-                if not isfolder(CFG_FOLDER) then makefolder(CFG_FOLDER) end
-                writefile(CFG_FILE, game:GetService("HttpService"):JSONEncode(_cfgData))
-            end)
-        end
-
-        local function cfgLoad()
-            pcall(function()
-                if not isfile(CFG_FILE) then return end
-                local raw = readfile(CFG_FILE)
-                if raw and #raw > 1 then
-                    _cfgData = game:GetService("HttpService"):JSONDecode(raw) or {}
-                end
-            end)
-        end
-
-        -- Wrap the event bus so every Toggle/Slider change is intercepted
-        -- and saved without modifying the calling script at all
-        local _origFire = Peleccos.Events.Fire
-        Peleccos.Events.Fire = function(self, d)
-            if d and (d.Type == "Toggle" or d.Type == "Slider") then
-                local key = (d.Tab or "") .. "|" .. (d.SubTab or "") .. "|" .. (d.Section or "") .. "|" .. (d.Name or "")
-                _cfgData[key] = d.Value
-            end
-            return _origFire(self, d)
-        end
-
-        -- Restore saved values on next frame (after GUI is fully built)
-        task.defer(function()
-            cfgLoad()
-            for key, val in pairs(_cfgData) do
-                -- Fire a fake event so listeners update their internal state
-                local parts = key:split("|")
-                if #parts == 4 then
-                    Peleccos.Events:Fire({
-                        Type    = type(val) == "boolean" and "Toggle" or "Slider",
-                        Name    = parts[4],
-                        Value   = val,
-                        Tab     = parts[1],
-                        SubTab  = parts[2],
-                        Section = parts[3],
-                        _fromLoad = true,
-                    })
-                end
-            end
+        pcall(function()
+            if not isfolder(CFG_FOLDER) then makefolder(CFG_FOLDER) end
+            if not isfolder(PRF_FOLDER)  then makefolder(PRF_FOLDER)  end
         end)
 
-        -- Config SubTab: Configs (named profiles)
-        local PROFILES_FOLDER = CFG_FOLDER .. "/configs"
-        pcall(function() if not isfolder(PROFILES_FOLDER) then makefolder(PROFILES_FOLDER) end end)
-
-        local _currentProfile = "default"
-        local _autoSave = true
-
-        local function profilePath(name)
-            local safe = (name or "default"):gsub("[^%w_%-]","_")
-            return PROFILES_FOLDER .. "/" .. safe .. ".json"
+        local function ppath(name)
+            return PRF_FOLDER .. "/" .. tostring(name):gsub("[^%w_%-]","_") .. ".json"
         end
 
-        local function saveProfile(name)
+        local function pSave(name)
             pcall(function()
-                if not isfolder(PROFILES_FOLDER) then makefolder(PROFILES_FOLDER) end
-                writefile(profilePath(name), game:GetService("HttpService"):JSONEncode(_cfgData))
+                writefile(ppath(name), HS:JSONEncode(_cfgData))
             end)
         end
 
-        local function loadProfile(name)
-            local count = 0
+        local function pLoad(name)
+            local n = 0
             pcall(function()
-                local path = profilePath(name)
+                local path = ppath(name)
                 if not isfile(path) then return end
                 local raw = readfile(path)
                 if not raw or #raw < 2 then return end
-                _cfgData = game:GetService("HttpService"):JSONDecode(raw) or {}
-                for key, val in pairs(_cfgData) do
-                    -- Use the key directly — no need to split, just look up setter
-                    local setter = _setterReg[key]
-                    if setter then
-                        pcall(setter, val)
-                        count = count + 1
-                    end
+                local data = HS:JSONDecode(raw) or {}
+                _cfgData = data
+                for key, val in pairs(data) do
+                    local fn = _setterReg[key]
+                    if fn then pcall(fn, val); n = n + 1 end
                 end
             end)
-            return count
+            return n
         end
 
-        local function listProfiles()
+        local function pList()
             local list = {}
             pcall(function()
-                if not isfolder(PROFILES_FOLDER) then return end
-                for _, f in ipairs(listfiles(PROFILES_FOLDER)) do
-                    local s = tostring(f)
-                    -- Normalize slashes and extract filename
-                    s = s:gsub("\\", "/")
+                if not isfolder(PRF_FOLDER) then return end
+                for _, f in ipairs(listfiles(PRF_FOLDER)) do
+                    local s = tostring(f):gsub("\\","/")
                     local name = s:match("([^/]+)$") or s
-                    name = name:gsub("%.json$", "")
+                    name = name:gsub("%.json$","")
                     if name and name ~= "" then
                         table.insert(list, name)
                     end
@@ -1089,125 +1033,107 @@ function Peleccos:CreateWindow(o)
             return list
         end
 
-        local function deleteProfile(name)
+        local function pDelete(name)
             pcall(function()
-                local path = profilePath(name)
-                if isfile(path) then delfile(path) end
+                if isfile(ppath(name)) then delfile(ppath(name)) end
             end)
         end
 
-        -- Auto-patch Fire to save on every change
-        local _origFireCfg = Peleccos.Events.Fire
-        Peleccos.Events.Fire = function(self2, d)
-            local r = _origFireCfg(self2, d)
-            if d and (d.Type=="Toggle" or d.Type=="Slider") and not d._fromLoad then
-                local key = (d.Tab or "").."|"..(d.SubTab or "").."|"..(d.Section or "").."|"..(d.Name or "")
-                _cfgData[key] = d.Value
-                if _autoSave then saveProfile(_currentProfile) end
-            end
-            return r
-        end
+        -- Intercept Events:Fire to capture toggle/slider changes
+        -- Use Connect so it works with the EvBus system properly
+        Peleccos.Events:Connect(function(d)
+            if not d or d._fromLoad then return end
+            if d.Type ~= "Toggle" and d.Type ~= "Slider" then return end
+            local key = (d.Tab or "").."|"..(d.SubTab or "").."|"..(d.Section or "").."|"..(d.Name or "")
+            _cfgData[key] = d.Value
+            if _autoSave then pSave(_curProfile) end
+        end)
 
-        -- Load default profile on startup
-        -- Load default profile after GUI is fully built
-        -- We wait for _finalized flag which is set by Win:Finalize()
+        -- Auto-load default profile after GUI is ready
         task.spawn(function()
-            local waited = 0
-            while not _finalized and waited < 5 do
-                task.wait(0.1)
-                waited = waited + 0.1
-            end
-            task.wait(0.2) -- small buffer after finalize
-            local n = loadProfile("default")
-            _currentProfile = "default"
+            local w = 0
+            while not _finalized and w < 5 do task.wait(0.1); w=w+0.1 end
+            task.wait(0.3)
+            local n = pLoad("default")
+            _curProfile = "default"
             if n > 0 then
-                notify({ Title="Config", Desc="Auto-loaded "..n.." settings", Type="Info", Duration=3 })
+                notify({ Title="Config", Desc="Loaded "..n.." settings", Type="Info", Duration=3 })
             end
         end)
 
-        local SubCfg = TabCfg:AddSubTab({ Name = "Configs" })
+        -- Configs subtab
+        local SubCfg  = TabCfg:AddSubTab({ Name = "Configs" })
+        local SecPrfL = SubCfg:AddSection({ Name = "Profiles", Side = "left" })
+        local SecPrfR = SubCfg:AddSection({ Name = "New Profile", Side = "right" })
 
-        -- LEFT: profile list + actions
-        local SecProfiles = SubCfg:AddSection({ Name = "Profiles", Side = "left" })
-
-        local _profileList = listProfiles()
-        local _selectedProfile = _profileList[1] or "default"
-
-        local profileDropRef = SecProfiles:AddDropdown({
-            Name = "Active Profile",
-            Options = _profileList,
-            Default = _selectedProfile,
-            Callback = function(v) _selectedProfile = v end,
+        local _pList = pList()
+        local _selPrf = _pList[1] or "default"
+        local _dropRef = SecPrfL:AddDropdown({
+            Name    = "Active Profile",
+            Options = _pList,
+            Default = _selPrf,
+            Callback = function(v) _selPrf = v end,
         })
 
-        SecProfiles:AddButton({
+        SecPrfL:AddButton({
             Name = "Load Selected",
             Callback = function()
-                _currentProfile = _selectedProfile
-                local n = loadProfile(_currentProfile)
-                notify({ Title="Config", Desc='Loaded "'..(_currentProfile)..'" ('..n..' settings)', Type="Success", Duration=3 })
+                _curProfile = _selPrf
+                local n = pLoad(_curProfile)
+                notify({ Title="Config", Desc='Loaded "'.._curProfile..'" ('..n..' settings)', Type="Success", Duration=3 })
             end,
         })
-
-        SecProfiles:AddButton({
+        SecPrfL:AddButton({
             Name = "Save to Selected",
             Callback = function()
-                _currentProfile = _selectedProfile
-                saveProfile(_currentProfile)
-                notify({ Title="Config", Desc='Saved to "'.._currentProfile..'"', Type="Success", Duration=3 })
+                _curProfile = _selPrf
+                pSave(_curProfile)
+                notify({ Title="Config", Desc='Saved to "'.._curProfile..'"', Type="Success", Duration=3 })
             end,
         })
-
-        SecProfiles:AddButton({
+        SecPrfL:AddButton({
             Name = "Delete Selected",
             Callback = function()
-                if _selectedProfile == "default" then
-                    notify({ Title="Config", Desc="Cannot delete default profile.", Type="Warning", Duration=3 })
+                if _selPrf == "default" then
+                    notify({ Title="Config", Desc="Cannot delete default.", Type="Warning", Duration=3 })
                     return
                 end
-                deleteProfile(_selectedProfile)
-                notify({ Title="Config", Desc='Deleted "'.._selectedProfile..'"', Type="Success", Duration=3 })
-                -- Refresh dropdown
-                local newList = listProfiles()
-                profileDropRef:SetOptions(newList)
-                _selectedProfile = newList[1] or "default"
-                profileDropRef:Set(_selectedProfile)
+                pDelete(_selPrf)
+                local nl = pList()
+                _dropRef:SetOptions(nl)
+                _selPrf = nl[1] or "default"
+                _dropRef:Set(_selPrf)
+                notify({ Title="Config", Desc='Deleted "'.._selPrf..'"', Type="Success", Duration=3 })
             end,
         })
 
-        -- RIGHT: create new profile + auto-save
-        local SecNewProfile = SubCfg:AddSection({ Name = "New Profile", Side = "right" })
-
-        local _newProfileName = ""
-        SecNewProfile:AddTextbox({
-            Name = "Profile Name",
+        local _newName = ""
+        SecPrfR:AddTextbox({
+            Name        = "Profile Name",
             Placeholder = "my_config",
-            Callback = function(v) _newProfileName = v:gsub("[^%w_%-]","_") end,
+            Callback    = function(v) _newName = v:gsub("[^%w_%-]","_") end,
         })
-
-        SecNewProfile:AddButton({
+        SecPrfR:AddButton({
             Name = "Create & Save",
             Callback = function()
-                local name = _newProfileName ~= "" and _newProfileName or "profile_"..os.time()
-                saveProfile(name)
-                local newList = listProfiles()
-                profileDropRef:SetOptions(newList)
-                profileDropRef:Set(name)
-                _selectedProfile = name
-                _currentProfile  = name
-                notify({ Title="Config", Desc='Created "'..name..'"', Type="Success", Duration=3 })
-                _newProfileName = ""
+                local name = (_newName ~= "") and _newName or ("profile_"..os.time())
+                pSave(name)
+                local nl = pList()
+                _dropRef:SetOptions(nl)
+                _dropRef:Set(name)
+                _selPrf  = name
+                _curProfile = name
+                notify({ Title="Config", Desc='Created "' ..name..'"', Type="Success", Duration=3 })
+                _newName = ""
             end,
         })
-
-        SecNewProfile:AddSeparator()
-
-        SecNewProfile:AddToggle({
-            Name = "Auto-Save on Change",
-            Default = true,
+        SecPrfR:AddSeparator()
+        SecPrfR:AddToggle({
+            Name     = "Auto-Save on Change",
+            Default  = true,
             Callback = function(v) _autoSave = v end,
         })
-        SecNewProfile:AddLabel({ Text = "Saves to active profile on every toggle/slider change.", Color = Color3.fromRGB(90,90,100) })
+        SecPrfR:AddLabel({ Text = "Saves to active profile on every toggle/slider change.", Color = Color3.fromRGB(90,90,100) })
     end
 
     -- Auto-finalize after 0.5s if script never calls Finalize()
