@@ -999,6 +999,7 @@ function Peleccos:CreateWindow(o)
             end)
         end
 
+        local _isLoading = false
         local function pLoad(name)
             local n = 0
             pcall(function()
@@ -1006,11 +1007,14 @@ function Peleccos:CreateWindow(o)
                 if not isfile(path) then return end
                 local raw = readfile(path)
                 if not raw or #raw < 2 then return end
-                _cfgData = HS:JSONDecode(raw) or {}
-                for key, val in pairs(_cfgData) do
+                local data = HS:JSONDecode(raw) or {}
+                _cfgData = data
+                _isLoading = true
+                for key, val in pairs(data) do
                     local fn = _setterReg[key]
                     if fn then pcall(fn, val); n = n + 1 end
                 end
+                _isLoading = false
             end)
             return n
         end
@@ -1041,7 +1045,7 @@ function Peleccos:CreateWindow(o)
         -- Intercept Events:Fire to capture toggle/slider changes
         -- Use Connect so it works with the EvBus system properly
         Peleccos.Events:Connect(function(d)
-            if not d or d._fromLoad then return end
+            if not d or _isLoading then return end
             if d.Type ~= "Toggle" and d.Type ~= "Slider" then return end
             local key = (d.Tab or "").."|"..(d.SubTab or "").."|"..(d.Section or "").."|"..(d.Name or "")
             _cfgData[key] = d.Value
