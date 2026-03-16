@@ -902,11 +902,10 @@ function Peleccos:CreateWindow(o)
     -- Config tab is added via task.defer so it runs AFTER the calling script
     -- has added all its own tabs. We also set LayoutOrder=9999 on both the
     -- category frame and the tab button so UIListLayout always sorts them last.
-    task.spawn(function()
-        -- Wait 2 frames so the calling script has time to add all its tabs first
-        -- task.defer is not enough — it fires before the caller continues
-        RunService.Stepped:Wait()
-        RunService.Stepped:Wait()
+    local _finalized = false
+    local function _finalizeConfig()
+        if _finalized then return end
+        _finalized = true
         _sideOrder = 9998
         WO:AddCategory("System")
         local TabCfg = WO:AddTab({ Name = o.ConfigName or "Config", Icon = o.ConfigIcon or "rbxassetid://0" })
@@ -1188,7 +1187,13 @@ function Peleccos:CreateWindow(o)
             Callback = function(v) _autoSave = v end,
         })
         SecNewProfile:AddLabel({ Text = "Saves to active profile on every toggle/slider change.", Color = Color3.fromRGB(90,90,100) })
-    end)
+    end
+
+    -- Auto-finalize after 0.5s if script never calls Finalize()
+    task.delay(0.5, function() _finalizeConfig() end)
+
+    -- Expose so script can call Win:Finalize() explicitly after adding all tabs
+    function WO:Finalize() _finalizeConfig() end
 
     return WO
 end
