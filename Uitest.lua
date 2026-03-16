@@ -699,7 +699,7 @@ function Peleccos:CreateWindow(o)
                         end)
                     end
 
-                    regSetter(nm, function(v) set(v, true) end)
+                    regSetter(nm, function(v) set(v, false) end)
                     table.insert(self._allEls,{label=nm,frame=row})
                     local r={Value=val} function r:Set(v) set(v,true) end function r:Get() return val end return r
                 end
@@ -733,7 +733,7 @@ function Peleccos:CreateWindow(o)
                     UIS.InputChanged:Connect(function(i) if dr and i.UserInputType==Enum.UserInputType.MouseMovement then sv(mn+(mx-mn)*math.clamp((i.Position.X-tr.AbsolutePosition.X)/tr.AbsoluteSize.X,0,1)) end end)
                     UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dr=false end end)
                     if flag then _G[flag]=val end
-                    regSetter(nm, function(v) sv(v, true) end)
+                    regSetter(nm, function(v) sv(v, false) end)
                     table.insert(self._allEls,{label=nm,frame=wrap})
                     local r={Value=val} function r:Set(v) sv(v,true) end function r:Get() return val end return r
                 end
@@ -1006,32 +1006,16 @@ function Peleccos:CreateWindow(o)
                 if not isfile(path) then return end
                 local raw = readfile(path)
                 if not raw or #raw < 2 then return end
-                local data = HS:JSONDecode(raw) or {}
-                _cfgData = data
-                -- Debug: print registry size and first few keys
-                local regSize = 0
-                for _ in pairs(_setterReg) do regSize = regSize + 1 end
-                print("[CFG] Registry size: " .. regSize)
-                for key, val in pairs(data) do
-                    print("[CFG] Loading key: " .. tostring(key) .. " = " .. tostring(val))
+                _cfgData = HS:JSONDecode(raw) or {}
+                for key, val in pairs(_cfgData) do
                     local fn = _setterReg[key]
-                    if fn then
-                        print("[CFG] Found setter, applying")
-                        pcall(fn, val); n = n + 1
-                    else
-                        print("[CFG] NO setter found for: " .. tostring(key))
-                        -- Print first 3 registry keys to compare
-                        local shown = 0
-                        for rk, _ in pairs(_setterReg) do
-                            if shown < 3 then print("[CFG] Registry has: " .. tostring(rk)); shown = shown + 1 end
-                        end
-                    end
+                    if fn then pcall(fn, val); n = n + 1 end
                 end
             end)
             return n
         end
 
-        local function pList()
+                local function pList()
             local list = {}
             pcall(function()
                 if not isfolder(PRF_FOLDER) then return end
