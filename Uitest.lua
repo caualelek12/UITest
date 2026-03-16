@@ -327,6 +327,7 @@ function Peleccos:CreateWindow(o)
 
     local WO={_tabs={},_activeTab=nil,Notify=notify,Events=Peleccos.Events}
     local _toggleRegistry={}
+    local _setterReg={}  -- "Tab|SubTab|Section|Name" -> set(value) fn
     -- Track current LayoutOrder for sidebar so Config always gets pushed to 9999
     local _sideOrder = 0
 
@@ -592,6 +593,7 @@ function Peleccos:CreateWindow(o)
 
                 local S={_i=items,_allEls=_els,_tn=tname,_stn=stname,_gn=gname}
                 local function fire(tp,nm,vl) Peleccos.Events:Fire({Type=tp,Name=nm,Value=vl,Tab=tname,SubTab=stname,Section=gname}) end
+                local function regSetter(nm,fn) _setterReg[(tname or "").."|"..(stname or "").."|"..(gname or "").."|"..(nm or "")]=fn end
                 local function toast(op) if op.Toast then notify({Title=op.ToastTitle or op.Name or "Action",Desc=op.ToastDesc or op.ToastDescription or "",Type=op.ToastType or "Info",Duration=op.ToastDuration or 3}) end end
 
                 function S:AddLabel(o5)
@@ -697,6 +699,7 @@ function Peleccos:CreateWindow(o)
                         end)
                     end
 
+                    regSetter(nm, function(v) set(v, true) end)
                     table.insert(self._allEls,{label=nm,frame=row})
                     local r={Value=val} function r:Set(v) set(v,true) end function r:Get() return val end return r
                 end
@@ -730,6 +733,7 @@ function Peleccos:CreateWindow(o)
                     UIS.InputChanged:Connect(function(i) if dr and i.UserInputType==Enum.UserInputType.MouseMovement then sv(mn+(mx-mn)*math.clamp((i.Position.X-tr.AbsolutePosition.X)/tr.AbsoluteSize.X,0,1)) end end)
                     UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dr=false end end)
                     if flag then _G[flag]=val end
+                    regSetter(nm, function(v) sv(v, true) end)
                     table.insert(self._allEls,{label=nm,frame=wrap})
                     local r={Value=val} function r:Set(v) sv(v,true) end function r:Get() return val end return r
                 end
@@ -1056,13 +1060,12 @@ function Peleccos:CreateWindow(o)
                 for key, val in pairs(_cfgData) do
                     local parts = key:split("|")
                     if #parts == 4 then
-                        Peleccos.Events:Fire({
-                            Type      = type(val) == "boolean" and "Toggle" or "Slider",
-                            Name      = parts[4], Value   = val,
-                            Tab       = parts[1], SubTab  = parts[2],
-                            Section   = parts[3], _fromLoad = true,
-                        })
-                        count = count + 1
+                        -- Call the setter directly so the GUI visually updates
+                        local setter = _setterReg[key]
+                        if setter then
+                            pcall(setter, val)
+                            count = count + 1
+                        end
                     end
                 end
             end)
@@ -1074,8 +1077,13 @@ function Peleccos:CreateWindow(o)
             pcall(function()
                 if not isfolder(PROFILES_FOLDER) then return end
                 for _, f in ipairs(listfiles(PROFILES_FOLDER)) do
-                    local name = f:match("([^/\]+)%.json$")
-                    if name then table.insert(list, name) end
+                    local s = tostring(f)
+                    -- listfiles may return full path or just filename depending on executor
+                    local name = s:match("([^/\\]+)%.json$") or s:match("([^/\\]+)$")
+                    if name then
+                        name = name:gsub("%.json$", "")
+                        table.insert(list, name)
+                    end
                 end
             end)
             if #list == 0 then table.insert(list, "default") end
@@ -1102,7 +1110,13 @@ function Peleccos:CreateWindow(o)
         end
 
         -- Load default profile on startup
-        task.defer(function() loadProfile("default"); _currentProfile = "default" end)
+        task.delay(1, function() 
+            local n = loadProfile("default")
+            _currentProfile = "default"
+            if n > 0 then
+                notify({ Title="Config", Desc="Auto-loaded default profile ("..n.." settings)", Type="Info", Duration=3 })
+            end
+        end)
 
         local SubCfg = TabCfg:AddSubTab({ Name = "Configs" })
 
