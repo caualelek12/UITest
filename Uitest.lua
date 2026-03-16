@@ -16,9 +16,6 @@
 ╚══════════════════════════════════════════════════════════════════╝
 ]]
 
--- ════════════════════════════════════════════════
---  SILENT ERROR LOGGER
--- ════════════════════════════════════════════════
 local _FOLDER = "PeleccosSoftwares"
 local _ERROR_FILE = _FOLDER .. "/errors.txt"
 
@@ -35,9 +32,6 @@ local function logError(err)
     end)
 end
 
--- ════════════════════════════════════════════════
---  IMAGE LOADER  (caches images to PeleccosSoftwares/images/)
--- ════════════════════════════════════════════════
 local _IMG_FOLDER = _FOLDER .. "/images"
 pcall(function()
     if not isfolder(_IMG_FOLDER) then makefolder(_IMG_FOLDER) end
@@ -46,11 +40,9 @@ end)
 local function loadImage(assetId, imageLabel)
     pcall(function()
         if not imageLabel or not imageLabel.Parent then return end
-        -- Try to use getcustomasset for cached loading if available
         local filename = _IMG_FOLDER .. "/" .. tostring(assetId):gsub("[^%w]", "_") .. ".png"
         if typeof(getcustomasset) == "function" then
             if not isfile(filename) then
-                -- Download and cache
                 local ok, data = pcall(function()
                     return game:HttpGet("https://assetdelivery.roblox.com/v1/asset/?id=" .. tostring(assetId):match("%d+") or tostring(assetId))
                 end)
@@ -66,7 +58,6 @@ local function loadImage(assetId, imageLabel)
                 end
             end
         end
-        -- Fallback: use rbxassetid directly
         imageLabel.Image = "rbxassetid://" .. tostring(assetId):match("%d+") or tostring(assetId)
     end)
 end
@@ -78,9 +69,6 @@ local RunService   = game:GetService("RunService")
 local CoreGui      = game:GetService("CoreGui")
 local LP           = Players.LocalPlayer
 
--- ════════════════════════════════════════════════
---  COLORS
--- ════════════════════════════════════════════════
 local C = {
     Sidebar  = Color3.fromRGB(22, 22, 22),
     Content  = Color3.fromRGB(20, 20, 20),
@@ -99,14 +87,10 @@ local C = {
     CatText  = Color3.fromRGB(100, 100, 115),
 }
 
--- ════════════════════════════════════════════════
---  HELPERS
--- ════════════════════════════════════════════════
--- runtime font registry: all text labels register here to be updated live
 local _FONT = Enum.Font.Gotham
 local _FONTBOLD = Enum.Font.GothamBold
 local _FONTSEMI = Enum.Font.GothamSemibold
-local _fontReg = {} -- {obj=TextLabel, kind="body"|"bold"|"semi"}
+local _fontReg = {}
 local function regFont(obj, kind) table.insert(_fontReg, {obj=obj, kind=kind or "body"}) end
 local function applyFont()
     for _, e in ipairs(_fontReg) do
@@ -119,7 +103,6 @@ local function applyFont()
 end
 local function setFont(f)
     _FONT=f
-    -- only confirmed valid Roblox bold variants (no UbuntuBold, NunitoSemibold etc.)
     local boldMap = {
         [Enum.Font.Gotham]          = {Enum.Font.GothamBold,       Enum.Font.GothamSemibold},
         [Enum.Font.Arial]           = {Enum.Font.ArialBold,         Enum.Font.Arial},
@@ -147,10 +130,6 @@ local function setFont(f)
     applyFont()
 end
 
--- contrast registry: labels whose color adapts to accent brightness
--- role="on"    → text sitting ON accent background (section headers) → black vs white
--- role="sub"   → secondary text on dark bg → only adjusts when accent is very light
--- role="muted" → muted text on dark bg → same as sub
 local _contrastReg = {}
 local _contrastOn = false
 local function regContrast(obj, role) table.insert(_contrastReg, {obj=obj, role=role or "sub"}) end
@@ -161,21 +140,18 @@ local function applyContrast(accent)
     for _, e in ipairs(_contrastReg) do
         if e.obj and e.obj.Parent then
             if e.role=="on" then
-                -- section headers always on accent bg
                 e.obj.TextColor3 = onColor
             elseif e.role=="stbtn" then
-                -- active subtab: accent bg → contrast; inactive: dark bg → default
                 if e.getActive and e.getActive() then
                     e.obj.TextColor3 = onColor
                 else
-                    e.obj.TextColor3 = Color3.fromRGB(170,170,182) -- C.TxtSub
+                    e.obj.TextColor3 = Color3.fromRGB(170,170,182)
                 end
             elseif e.role=="tablbl" then
-                -- active sidebar tab: accent bg → contrast; inactive → default
                 if e.getActive and e.getActive() then
                     e.obj.TextColor3 = onColor
                 else
-                    e.obj.TextColor3 = Color3.fromRGB(58,58,58) -- C.TxtOff (inactive tab)
+                    e.obj.TextColor3 = Color3.fromRGB(58,58,58)
                 end
             end
         end
@@ -191,7 +167,6 @@ local function new(cls, props)
     if props and props.Parent then o.Parent=props.Parent end
     return o
 end
--- TextLabel factory that auto-registers for font+contrast updates
 local function newTxt(props, fontKind, contrastRole)
     local o = new("TextLabel", props)
     if fontKind then regFont(o, fontKind) end
@@ -213,33 +188,22 @@ local function drag(frame,handle)
     UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then d=false end end)
 end
 
--- ════════════════════════════════════════════════
---  EVENT BUS
--- ════════════════════════════════════════════════
 local EvBus={_cbs={}}
 function EvBus:Fire(d) for _,f in pairs(self._cbs) do pcall(f,d) end end
 function EvBus:Connect(f) table.insert(self._cbs,f);return{Disconnect=function() for i,v in pairs(self._cbs) do if v==f then table.remove(self._cbs,i);break end end end} end
 
--- ════════════════════════════════════════════════
---  OVERLAY  (para dropdowns / color pickers)
--- ════════════════════════════════════════════════
 local _OVR,_OVA=nil,nil
 local function closeOV() if _OVA then _OVA:Destroy();_OVA=nil end end
 local function openOV(fn)
     closeOV()
     local f=new("Frame",{Name="OvF",Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,ZIndex=200,Parent=_OVR})
     local bg=new("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=200,Parent=f})
-    -- delay close so the opening click doesn't immediately close it
-    -- and dragging inside color picker doesn't close it on mouse release
     local canClose = false
     task.delay(0.2, function() canClose = true end)
     bg.MouseButton1Click:Connect(function() if canClose then closeOV() end end)
     _OVA=f; fn(f)
 end
 
--- ════════════════════════════════════════════════
---  NOTIFICATIONS
--- ════════════════════════════════════════════════
 local _NH
 local NC={Success=Color3.fromRGB(50,200,100),Warning=Color3.fromRGB(255,185,0),Error=Color3.fromRGB(255,65,65),Info=Color3.fromRGB(0,135,255)}
 local function initN(sg)
@@ -265,15 +229,14 @@ local function notify(o)
     task.delay(dur,function() tw(card,{BackgroundTransparency=1,Position=UDim2.new(1.3,0,0,0)},.22); task.wait(.25); card:Destroy() end)
 end
 
--- ════════════════════════════════════════════════
---  LIBRARY
--- ════════════════════════════════════════════════
 local Peleccos={}; Peleccos.__index=Peleccos
 Peleccos.Events=EvBus
 
+-- Track LayoutOrder for sidebar items so Config always gets 9999
+local _sideLayoutOrder = 0
+
 function Peleccos:CreateWindow(o)
     o=o or {}
-    -- destroy any existing instance to prevent duplicates
     pcall(function() local x=game:GetService("CoreGui"):FindFirstChild("PeleccosUI"); if x then x:Destroy() end end)
     pcall(function() local pg=LP:FindFirstChild("PlayerGui"); if pg then local x=pg:FindFirstChild("PeleccosUI"); if x then x:Destroy() end end end)
     pcall(function() if typeof(gethui)=="function" then local x=gethui():FindFirstChild("PeleccosUI"); if x then x:Destroy() end end end)
@@ -286,48 +249,39 @@ function Peleccos:CreateWindow(o)
     local function applyAC() ACD=dk(AC,.72); for _,fn in pairs(_acCBs) do pcall(fn,AC) end; if _contrastOn then applyContrast(AC) end end
 
     local W,H  = o.Width or 780, o.Height or 500
-    local SW   = 200    -- sidebar width
-    local TH   = 44     -- topbar height
-    local STH  = 36     -- subtab bar height (no topo do conteúdo)
-    local UCH  = 58     -- user card height
+    local SW   = 200
+    local TH   = 44
+    local STH  = 36
+    local UCH  = 58
     local KEY  = o.Key or Enum.KeyCode.Insert
 
-    -- apply default font if provided
     if o.Font then setFont(o.Font) end
 
-    -- ── ScreenGui ──────────────────────────
     local SG=new("ScreenGui",{Name="PeleccosUI",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
     local _parentGui = (typeof(gethui)=="function" and gethui()) or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui")) or LP:WaitForChild("PlayerGui")
     SG.Parent = _parentGui
     _OVR=new("Frame",{Name="OvRoot",Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,ZIndex=200,Parent=SG})
     initN(SG)
 
-    -- ── Window ─────────────────────────────
     local WIN=new("Frame",{Name="Win",Size=UDim2.new(0,W,0,H),Position=UDim2.new(.5,-W/2,.5,-H/2),BackgroundColor3=C.Content,BorderSizePixel=0,ClipsDescendants=true,ZIndex=1,Parent=SG})
     cor(WIN,UDim.new(0,10)); str(WIN,C.Border)
     new("ImageLabel",{Size=UDim2.new(1,90,1,90),Position=UDim2.new(0,-45,0,-45),BackgroundTransparency=1,Image="rbxassetid://6014261993",ImageColor3=Color3.fromRGB(0,0,0),ImageTransparency=.55,ScaleType=Enum.ScaleType.Slice,SliceCenter=Rect.new(49,49,450,450),ZIndex=0,Parent=WIN})
 
-    -- ── TopBar ─────────────────────────────
     local TOPBAR=new("Frame",{Name="TopBar",Size=UDim2.new(1,0,0,TH),BackgroundColor3=C.Sidebar,BorderSizePixel=0,ZIndex=10,Parent=WIN})
     cor(TOPBAR,UDim.new(0,10))
     new("Frame",{Size=UDim2.new(1,0,.5,0),Position=UDim2.new(0,0,.5,0),BackgroundColor3=C.Sidebar,BorderSizePixel=0,ZIndex=9,Parent=TOPBAR})
     new("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),BackgroundColor3=C.Border,BorderSizePixel=0,ZIndex=11,Parent=TOPBAR})
 
-    -- Logo (alinhado com a sidebar)
     local LB=new("Frame",{Size=UDim2.new(0,SW,1,0),BackgroundTransparency=1,ZIndex=12,Parent=TOPBAR})
     local LI=new("ImageLabel",{Size=UDim2.new(0,28,0,28),Position=UDim2.new(0,10,.5,-14),BackgroundColor3=C.BtnHover,Image=o.Logo or "rbxassetid://0",ZIndex=13,Parent=LB}); cor(LI,UDim.new(0,7))
     new("TextLabel",{Text=o.Title or "Peleccos",Size=UDim2.new(1,-46,1,0),Position=UDim2.new(0,44,0,0),BackgroundTransparency=1,TextColor3=C.TxtOn,TextSize=15,Font=_FONTBOLD,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=13,Parent=LB})
 
-    -- Search bar (top right)
     local SF=new("Frame",{Size=UDim2.new(0,120,0,28),Position=UDim2.new(1,-126,.5,-14),BackgroundColor3=C.BtnOff,ZIndex=12,Parent=TOPBAR}); cor(SF,UDim.new(0,8)); str(SF,C.Border)
     new("TextLabel",{Text="",Size=UDim2.new(0,18,1,0),Position=UDim2.new(0,6,0,0),BackgroundTransparency=1,TextColor3=C.TxtOff,TextSize=11,Font=_FONT,ZIndex=13,Parent=SF})
     local SBX=new("TextBox",{Text="",PlaceholderText="Search",Size=UDim2.new(1,-26,1,0),Position=UDim2.new(0,22,0,0),BackgroundTransparency=1,TextColor3=C.TxtOn,PlaceholderColor3=C.TxtOff,TextSize=11,Font=_FONT,TextXAlignment=Enum.TextXAlignment.Left,ClearTextOnFocus=false,ZIndex=13,Parent=SF})
     SBX.Focused:Connect(function() tw(SF,{BackgroundColor3=C.BtnHover},.12) end)
     SBX.FocusLost:Connect(function() tw(SF,{BackgroundColor3=C.BtnOff},.12) end)
 
-    -- ────────────────────────────────────────
-    --  SIDEBAR  (left: categories + tabs)
-    -- ────────────────────────────────────────
     local SIDE=new("Frame",{
         Name="Sidebar",
         Size=UDim2.new(0,SW,1,-(TH+1)),
@@ -341,7 +295,6 @@ function Peleccos:CreateWindow(o)
     lst(SIDE,Enum.FillDirection.Vertical,0)
     pad(SIDE,6,0,UCH+8,0)
 
-    -- User card fixed at bottom of sidebar (child of WIN, not SIDE)
     if o.User then
         local U=o.User
         local UC=new("Frame",{Name="UserCard",Size=UDim2.new(0,SW,0,UCH),Position=UDim2.new(0,0,1,-UCH),BackgroundColor3=Color3.fromRGB(18,18,18),ZIndex=12,Parent=WIN})
@@ -352,12 +305,8 @@ function Peleccos:CreateWindow(o)
         onAC(function(c) expLbl.TextColor3=c end)
     end
 
-    -- Sidebar / content divider
     new("Frame",{Size=UDim2.new(0,1,1,-(TH+1)),Position=UDim2.new(0,SW,0,TH+1),BackgroundColor3=C.Border,BorderSizePixel=0,ZIndex=10,Parent=WIN})
 
-    -- ────────────────────────────────────────
-    --  CONTENT AREA  (right of sidebar)
-    -- ────────────────────────────────────────
     local CONT=new("Frame",{
         Name="Content",
         Size=UDim2.new(1,-(SW+1),1,-(TH+1)),
@@ -370,18 +319,16 @@ function Peleccos:CreateWindow(o)
 
     drag(WIN,TOPBAR)
 
-    -- Search filter
     local _els={}
     SBX:GetPropertyChangedSignal("Text"):Connect(function()
         local q=SBX.Text:lower()
         for _,e in pairs(_els) do e.frame.Visible=q=="" or e.label:lower():find(q,1,true)~=nil end
     end)
 
-    -- ════════════════════════════════════════
-    --  WINDOW OBJECT
-    -- ════════════════════════════════════════
     local WO={_tabs={},_activeTab=nil,Notify=notify,Events=Peleccos.Events}
-    local _toggleRegistry={} -- flag -> {val, setFn, trackFrame, knobFrame}
+    local _toggleRegistry={}
+    -- Track current LayoutOrder for sidebar so Config always gets pushed to 9999
+    local _sideOrder = 0
 
     local _vis=true
     local _keyIgnoreOnce=false
@@ -392,12 +339,9 @@ function Peleccos:CreateWindow(o)
         end
     end)
 
-    -- ════════════════════════════════════════
-    --  ADD CATEGORY  (text separator na sidebar)
-    -- ════════════════════════════════════════
     function WO:AddCategory(name)
-        local cf=new("Frame",{Size=UDim2.new(1,0,0,28),BackgroundTransparency=1,ZIndex=9,Parent=SIDE})
-        -- accent line on the left
+        _sideOrder = _sideOrder + 1
+        local cf=new("Frame",{Size=UDim2.new(1,0,0,28),BackgroundTransparency=1,LayoutOrder=_sideOrder,ZIndex=9,Parent=SIDE})
         local line=new("Frame",{Size=UDim2.new(0,2,1,-10),Position=UDim2.new(0,10,.5,-( (28-10)/2 )),BackgroundColor3=AC,ZIndex=10,Parent=cf})
         cor(line,UDim.new(0,2))
         onAC(function(c) line.BackgroundColor3=c end)
@@ -411,23 +355,21 @@ function Peleccos:CreateWindow(o)
         regFont(catLbl,"bold")
     end
 
-    -- ════════════════════════════════════════
-    --  ADD TAB  (sidebar button → abre página de conteúdo)
-    -- ════════════════════════════════════════
     function WO:AddTab(o2)
         o2=o2 or {}
         local tname=o2.Name or "Tab"
         local first=#self._tabs==0
 
-        -- ── Botão na sidebar ──
+        _sideOrder = _sideOrder + 1
         local sbtn=new("TextButton",{
             Size=UDim2.new(1,-8,0,34),
             BackgroundColor3=first and AC or C.BtnOff,
             BackgroundTransparency=first and 0 or 1,
-            Text="",AutoButtonColor=false,ZIndex=9,Parent=SIDE,
+            Text="",AutoButtonColor=false,
+            LayoutOrder=_sideOrder,
+            ZIndex=9,Parent=SIDE,
         })
         cor(sbtn,UDim.new(0,7))
-        -- active left bar
         local abar=new("Frame",{
             Size=UDim2.new(0,3,.55,0),
             Position=UDim2.new(0,0,.225,0),
@@ -437,8 +379,6 @@ function Peleccos:CreateWindow(o)
         }); cor(abar,UDim.new(0,2))
         onAC(function(c) abar.BackgroundColor3=c end)
 
-        -- icon box
-        -- icon box: visible only when a real icon ID is provided
         local _hasIcon = o2.Icon and o2.Icon ~= "" and o2.Icon ~= "rbxassetid://0"
         local ibox=new("Frame",{
             Size=UDim2.new(0,22,0,22),
@@ -456,7 +396,6 @@ function Peleccos:CreateWindow(o)
             Visible=_hasIcon,
             ZIndex=11,Parent=ibox,
         })
-        -- tab label shifts left when no icon
         local _lblX = _hasIcon and 36 or 14
         local slbl=new("TextLabel",{
             Text=tname,
@@ -469,10 +408,8 @@ function Peleccos:CreateWindow(o)
             ZIndex=10,Parent=sbtn,
         })
         regFont(slbl,"body")
-        -- register sidebar tab label for contrast when active (sits on accent bg)
         table.insert(_contrastReg, {obj=slbl, role="tablbl", getActive=function() return self._activeTab==TAB end})
 
-        -- ── Página de conteúdo desta tab ──
         local tabPage=new("Frame",{
             Size=UDim2.new(1,0,1,0),
             BackgroundTransparency=1,
@@ -480,7 +417,6 @@ function Peleccos:CreateWindow(o)
             ZIndex=5,Parent=CONT,
         })
 
-        -- ── Barra de SubTabs (topo da página de conteúdo) ──
         local STBAR=new("Frame",{
             Name="SubTabBar",
             Size=UDim2.new(1,0,0,STH),
@@ -491,10 +427,8 @@ function Peleccos:CreateWindow(o)
             ClipsDescendants=true,
             Parent=tabPage,
         })
-        -- bottom divider
         local stbarLine=new("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),BackgroundColor3=AC,BorderSizePixel=0,ZIndex=21,Parent=STBAR})
         onAC(function(c) stbarLine.BackgroundColor3=c end)
-        -- inner container centered vertically for buttons
         local STINNER=new("Frame",{
             Size=UDim2.new(1,-16,0,26),
             Position=UDim2.new(0,8,0.5,-13),
@@ -505,7 +439,6 @@ function Peleccos:CreateWindow(o)
         })
         local stbarList=lst(STINNER,Enum.FillDirection.Horizontal,4)
 
-        -- ── Container de páginas das subtabs (abaixo da barra) ──
         local STPAGES=new("Frame",{
             Name="SubPages",
             Size=UDim2.new(1,0,1,-STH),
@@ -523,11 +456,9 @@ function Peleccos:CreateWindow(o)
         table.insert(self._tabs,TAB)
         if first then self._activeTab=TAB end
 
-        -- onAC callbacks that need TAB to exist
         onAC(function(c) if self._activeTab==TAB then sbtn.BackgroundColor3=c end end)
         onAC(function(c) if self._activeTab==TAB then ibox.BackgroundColor3=c end end)
 
-        -- Activate tab
         local function activateTab()
             if self._activeTab==TAB then return end
             local old=self._activeTab
@@ -563,15 +494,11 @@ function Peleccos:CreateWindow(o)
             end
         end)
 
-        -- ════════════════════════════════════
-        --  ADD SUBTAB  (button in the top bar of content)
-        -- ════════════════════════════════════
         function TAB:AddSubTab(o3)
             o3=o3 or {}
             local stname=o3.Name or "SubTab"
             local sfirst=#self._subtabs==0
 
-            -- Subtab button
             local stbtn=new("TextButton",{
                 Size=UDim2.new(0,0,0,26),
                 AutomaticSize=Enum.AutomaticSize.X,
@@ -584,10 +511,8 @@ function Peleccos:CreateWindow(o)
             })
             cor(stbtn,UDim.new(0,6)); pad(stbtn,0,14,0,14)
             regFont(stbtn,"semi")
-            -- register for contrast: active subtab sits on accent bg
             table.insert(_contrastReg, {obj=stbtn, role="stbtn", getActive=function() return self._activeSub==STAB end})
 
-            -- SubTab page (two columns)
             local stPage=new("Frame",{
                 Size=UDim2.new(1,0,1,0),
                 BackgroundTransparency=1,
@@ -620,7 +545,6 @@ function Peleccos:CreateWindow(o)
 
             onAC(function(c) if self._activeSub==STAB then stbtn.BackgroundColor3=c end end)
 
-            -- Activate subtab (sidebar does NOT change)
             local function activateSub()
                 if self._activeSub==STAB then return end
                 local old=self._activeSub
@@ -647,9 +571,6 @@ function Peleccos:CreateWindow(o)
                 end
             end)
 
-            -- ════════════════════════════════
-            --  ADD SECTION
-            -- ════════════════════════════════
             function STAB:AddSection(o4)
                 o4=o4 or {}
                 local gname=o4.Name or "Section"
@@ -673,7 +594,6 @@ function Peleccos:CreateWindow(o)
                 local function fire(tp,nm,vl) Peleccos.Events:Fire({Type=tp,Name=nm,Value=vl,Tab=tname,SubTab=stname,Section=gname}) end
                 local function toast(op) if op.Toast then notify({Title=op.ToastTitle or op.Name or "Action",Desc=op.ToastDesc or op.ToastDescription or "",Type=op.ToastType or "Info",Duration=op.ToastDuration or 3}) end end
 
-                -- ── LABEL ─────────────────
                 function S:AddLabel(o5)
                     o5=o5 or {}
                     local l=new("TextLabel",{Text=o5.Text or "",Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,TextColor3=o5.Color or C.TxtMuted,TextSize=o5.Size or 12,Font=_FONT,TextXAlignment=Enum.TextXAlignment.Left,TextWrapped=true,ZIndex=6,Parent=self._i})
@@ -681,7 +601,6 @@ function Peleccos:CreateWindow(o)
                     local r={} function r:Set(t) l.Text=t end function r:Get() return l.Text end return r
                 end
 
-                -- ── BUTTON ────────────────
                 function S:AddButton(o5)
                     o5=o5 or {}; local nm=o5.Name or "Button"; local cb=o5.Callback or function() end
                     local btn=new("TextButton",{Size=UDim2.new(1,0,0,30),BackgroundColor3=C.BtnOff,Text=nm,TextColor3=C.TxtOff,TextSize=12,Font=_FONTSEMI,AutoButtonColor=false,ZIndex=6,Parent=self._i}); cor(btn,UDim.new(0,8)); str(btn,C.Border)
@@ -693,7 +612,6 @@ function Peleccos:CreateWindow(o)
                     local r={} function r:SetText(t) btn.Text=t end return r
                 end
 
-                -- ── TOGGLE ────────────────
                 function S:AddToggle(o5)
                     o5=o5 or {}
                     local nm=o5.Name or "Toggle"
@@ -702,7 +620,6 @@ function Peleccos:CreateWindow(o)
                     local flag=o5.Flag
                     local hasKB=o5.Keybind~=nil
                     local hasCP=o5.Color~=nil
-                    -- reserved width: track(40) + [keybind(52)] + [colorpicker(28)] + margem
                     local reservedW = 40 + (hasKB and 56 or 0) + (hasCP and 32 or 0) + 8
 
                     local row=new("Frame",{Size=UDim2.new(1,0,0,28),BackgroundColor3=C.BtnOff,BackgroundTransparency=1,ZIndex=6,Parent=self._i}); cor(row,UDim.new(0,6))
@@ -711,15 +628,12 @@ function Peleccos:CreateWindow(o)
                     local lbl=new("TextLabel",{Text=nm,Size=UDim2.new(1,-(reservedW+4),1,0),Position=UDim2.new(0,4,0,0),BackgroundTransparency=1,TextColor3=C.TxtSub,TextSize=12,Font=_FONT,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=row})
                     regFont(lbl,"body"); regContrast(lbl,"sub")
 
-                    -- toggle track (rightmost after extras)
                     local track=new("Frame",{Size=UDim2.new(0,36,0,18),Position=UDim2.new(1,-40,.5,-9),BackgroundColor3=val and AC or C.TrackOff,ZIndex=7,Parent=row}); cor(track,UDim.new(0,9))
                     local knob=new("Frame",{Size=UDim2.new(0,14,0,14),Position=val and UDim2.new(1,-16,.5,-7) or UDim2.new(0,2,.5,-7),BackgroundColor3=C.TxtOn,ZIndex=8,Parent=track}); cor(knob,UDim.new(0,7))
-                    -- clickable area covering just the track zone
                     local trackBtn=new("TextButton",{Size=UDim2.new(0,36,0,18),Position=UDim2.new(1,-40,.5,-9),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=9,Parent=row})
                     onAC(function(c)
                         if val then
                             track.BackgroundColor3=c
-                            -- knob contrasts against track (accent) color
                             local _,_,v2=Color3.toHSV(c)
                             knob.BackgroundColor3 = v2>0.7 and Color3.fromRGB(30,30,30) or Color3.fromRGB(255,255,255)
                         end
@@ -728,7 +642,6 @@ function Peleccos:CreateWindow(o)
                     local function set(v,silent)
                         val=v; track.BackgroundColor3=v and AC or C.TrackOff
                         tw(knob,{Position=v and UDim2.new(1,-16,.5,-7) or UDim2.new(0,2,.5,-7)},.15,Enum.EasingStyle.Back)
-                        -- knob color contrasts with track
                         if v then local _,_,bv=Color3.toHSV(AC); knob.BackgroundColor3=bv>0.7 and Color3.fromRGB(30,30,30) or Color3.fromRGB(255,255,255)
                         else knob.BackgroundColor3=Color3.fromRGB(255,255,255) end
                         if not silent then fire("Toggle",nm,v);toast(o5);cb(v) end
@@ -738,7 +651,6 @@ function Peleccos:CreateWindow(o)
                     if flag then _G[flag]=val end
                     if flag then _toggleRegistry[flag]={get=function() return val end, set=function(v) set(v,false) end} end
 
-                    -- ── Inline ColorPicker (à esquerda do track) ──
                     if hasCP then
                         local cpCol=o5.Color or Color3.fromRGB(255,80,80); local cpCb=o5.ColorCallback or function() end
                         local cpX = hasKB and UDim2.new(1,-132,.5,-10) or UDim2.new(1,-76,.5,-10)
@@ -767,7 +679,6 @@ function Peleccos:CreateWindow(o)
                         sw.MouseButton1Click:Connect(function() open=not open; if open then openOV(buildCP) else closeOV() end end)
                     end
 
-                    -- ── Inline Keybind (entre color e track) ──
                     if hasKB then
                         local key=o5.Keybind or Enum.KeyCode.Unknown; local listening=false
                         local kb=new("TextButton",{Size=UDim2.new(0,48,0,18),Position=UDim2.new(1,-92,.5,-9),BackgroundColor3=C.Input,Text=key.Name,TextColor3=AC,TextSize=9,Font=_FONTBOLD,AutoButtonColor=false,ZIndex=7,Parent=row}); cor(kb,UDim.new(0,5)); str(kb,C.Border)
@@ -790,7 +701,6 @@ function Peleccos:CreateWindow(o)
                     local r={Value=val} function r:Set(v) set(v,true) end function r:Get() return val end return r
                 end
 
-                -- ── SLIDER ────────────────
                 function S:AddSlider(o5)
                     o5=o5 or {}; local nm=o5.Name or "Slider"; local mn,mx=o5.Min or 0,o5.Max or 100; local step=o5.Step or 1; local suf=o5.Suffix or ""; local flag=o5.Flag; local cb=o5.Callback or function() end
                     local val=math.clamp(o5.Default or mn,mn,mx)
@@ -824,7 +734,6 @@ function Peleccos:CreateWindow(o)
                     local r={Value=val} function r:Set(v) sv(v,true) end function r:Get() return val end return r
                 end
 
-                -- ── TEXTBOX ───────────────
                 function S:AddTextbox(o5)
                     o5=o5 or {}; local nm=o5.Name or "Textbox"; local cb=o5.Callback or function() end
                     local wrap=new("Frame",{Size=UDim2.new(1,0,0,46),BackgroundTransparency=1,ZIndex=6,Parent=self._i})
@@ -846,7 +755,6 @@ function Peleccos:CreateWindow(o)
                     local r={} function r:Set(v) tb.Text=v end function r:Get() return tb.Text end return r
                 end
 
-                -- ── DROPDOWN ──────────────
                 function S:AddDropdown(o5)
                     o5=o5 or {}; local nm=o5.Name or "Dropdown"; local opts=o5.Options or {}; local multi=o5.Multi or false; local flag=o5.Flag; local cb=o5.Callback or function() end
                     local sel=o5.Default or (opts[1] or ""); local msel={}; local open=false
@@ -858,29 +766,14 @@ function Peleccos:CreateWindow(o)
                     hd.MouseLeave:Connect(function() tw(hd,{BackgroundColor3=C.Input},.1);tw(hsk,{Color=C.Border},.1) end)
                     local sl=new("TextLabel",{Text=multi and "Select..." or tostring(sel),Size=UDim2.new(1,-26,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,TextColor3=C.TxtOn,TextSize=11,Font=_FONT,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8,Parent=hd})
                     regFont(sl,"body")
-                    -- dropdown arrow: ImageLabel, rotates 180° when open
-                    local ar=new("ImageLabel",{
-                        Image="rbxassetid://6034818375",
-                        Size=UDim2.new(0,12,0,12),
-                        Position=UDim2.new(1,-18,.5,-6),
-                        BackgroundTransparency=1,
-                        ImageColor3=C.TxtOff,
-                        ZIndex=8,Parent=hd,
-                    })
-
-                    local function closeDropdown()
-                        open=false
-                        tw(ar,{Rotation=0},.15)
-                        closeOV()
-                    end
-
+                    local ar=new("ImageLabel",{Image="rbxassetid://6034818375",Size=UDim2.new(0,12,0,12),Position=UDim2.new(1,-18,.5,-6),BackgroundTransparency=1,ImageColor3=C.TxtOff,ZIndex=8,Parent=hd})
+                    local function closeDropdown() open=false; tw(ar,{Rotation=0},.15); closeOV() end
                     local function build(ov)
                         local ap=hd.AbsolutePosition;local as=hd.AbsoluteSize;local lh=math.min(#opts*26+10,160)
                         local px=math.min(ap.X,SG.AbsoluteSize.X-as.X-8);local py=ap.Y+as.Y+4;if py+lh>SG.AbsoluteSize.Y-8 then py=ap.Y-lh-4 end
                         local pan=new("Frame",{Size=UDim2.new(0,as.X,0,0),Position=UDim2.new(0,px,0,py),BackgroundColor3=Color3.fromRGB(24,24,24),ZIndex=210,Parent=ov}); cor(pan,UDim.new(0,10)); str(pan,C.Border)
                         tw(pan,{Size=UDim2.new(0,as.X,0,lh)},.15,Enum.EasingStyle.Back,Enum.EasingDirection.Out)
                         local sc=new("ScrollingFrame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,ScrollBarThickness=2,ScrollBarImageColor3=AC,CanvasSize=UDim2.new(0,0,0,0),ZIndex=211,Parent=pan}); lst(sc,Enum.FillDirection.Vertical,2); pad(sc,4,4,4,4); autoY(sc)
-                        -- rotate back when overlay is destroyed (clicked outside)
                         ov.ChildRemoved:Connect(function() tw(ar,{Rotation=0},.15); open=false end)
                         for _,op in pairs(opts) do
                             local isSel=multi and table.find(msel,op)~=nil or op==sel
@@ -894,17 +787,12 @@ function Peleccos:CreateWindow(o)
                             end)
                         end
                     end
-                    hd.MouseButton1Click:Connect(function()
-                        open=not open
-                        if open then tw(ar,{Rotation=180},.15);openOV(build)
-                        else closeDropdown() end
-                    end)
+                    hd.MouseButton1Click:Connect(function() open=not open; if open then tw(ar,{Rotation=180},.15);openOV(build) else closeDropdown() end end)
                     if flag then _G[flag]=sel end
                     table.insert(self._allEls,{label=nm,frame=wrap})
                     local r={Value=sel} function r:Set(v) sel=v;sl.Text=v;if flag then _G[flag]=v end end function r:SetOptions(t) opts=t end function r:Get() return multi and msel or sel end return r
                 end
 
-                -- ── COLOR PICKER ──────────
                 function S:AddColorPicker(o5)
                     o5=o5 or {}; local nm=o5.Name or "Color"; local col=o5.Default or Color3.fromRGB(255,80,80); local flag=o5.Flag; local cb=o5.Callback or function() end; local open=false; local ch,cs,cv=Color3.toHSV(col)
                     local row=new("Frame",{Size=UDim2.new(1,0,0,28),BackgroundColor3=C.BtnOff,BackgroundTransparency=1,ZIndex=6,Parent=self._i}); cor(row,UDim.new(0,6))
@@ -928,11 +816,7 @@ function Peleccos:CreateWindow(o)
                         new("UIGradient",{Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(255,0,0)),ColorSequenceKeypoint.new(.17,Color3.fromRGB(255,255,0)),ColorSequenceKeypoint.new(.33,Color3.fromRGB(0,255,0)),ColorSequenceKeypoint.new(.5,Color3.fromRGB(0,255,255)),ColorSequenceKeypoint.new(.67,Color3.fromRGB(0,0,255)),ColorSequenceKeypoint.new(.83,Color3.fromRGB(255,0,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(255,0,0))}),Parent=hb})
                         local hc=new("Frame",{Size=UDim2.new(0,4,1,4),AnchorPoint=Vector2.new(.5,.5),Position=UDim2.new(ch,0,.5,0),BackgroundColor3=C.TxtOn,ZIndex=213,Parent=hb}); cor(hc,UDim.new(0,3))
                         local pv=new("Frame",{Size=UDim2.new(1,-12,0,14),Position=UDim2.new(0,6,0,115),BackgroundColor3=col,ZIndex=211,Parent=pan}); cor(pv,UDim.new(0,6))
-                        local function upd()
-                            col=Color3.fromHSV(ch,cs,cv); sw.BackgroundColor3=col; svbg.BackgroundColor3=Color3.fromHSV(ch,1,1)
-                            svc.Position=UDim2.new(cs,0,1-cv,0); hc.Position=UDim2.new(ch,0,.5,0); pv.BackgroundColor3=col
-                            fire("ColorPicker",nm,col); cb(col); if flag then _G[flag]=col end
-                        end
+                        local function upd() col=Color3.fromHSV(ch,cs,cv); sw.BackgroundColor3=col; svbg.BackgroundColor3=Color3.fromHSV(ch,1,1); svc.Position=UDim2.new(cs,0,1-cv,0); hc.Position=UDim2.new(ch,0,.5,0); pv.BackgroundColor3=col; fire("ColorPicker",nm,col); cb(col); if flag then _G[flag]=col end end
                         local svd,hud=false,false
                         svbg.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then svd=true;cs=math.clamp((i.Position.X-svbg.AbsolutePosition.X)/svbg.AbsoluteSize.X,0,1);cv=1-math.clamp((i.Position.Y-svbg.AbsolutePosition.Y)/svbg.AbsoluteSize.Y,0,1);upd() end end)
                         hb.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then hud=true;ch=math.clamp((i.Position.X-hb.AbsolutePosition.X)/hb.AbsoluteSize.X,0,1);upd() end end)
@@ -945,7 +829,6 @@ function Peleccos:CreateWindow(o)
                     local r={Value=col} function r:Set(c2) col=c2;ch,cs,cv=Color3.toHSV(c2);sw.BackgroundColor3=c2 end function r:Get() return col end return r
                 end
 
-                -- ── KEYBIND ───────────────
                 function S:AddKeybind(o5)
                     o5=o5 or {}; local nm=o5.Name or "Keybind"; local key=o5.Default or Enum.KeyCode.Unknown; local flag=o5.Flag; local cb=o5.Callback or function() end; local listening=false
                     local row=new("Frame",{Size=UDim2.new(1,0,0,28),BackgroundTransparency=1,ZIndex=6,Parent=self._i})
@@ -970,7 +853,6 @@ function Peleccos:CreateWindow(o)
                             end
                         elseif not listening and not gpe and i.KeyCode==key then
                             if key==KEY then _keyIgnoreOnce=true end
-                            -- if LinkedFlag is set, toggle the linked element
                             local lf=o5.LinkedFlag
                             if lf and _toggleRegistry[lf] then
                                 local tr=_toggleRegistry[lf]
@@ -984,13 +866,11 @@ function Peleccos:CreateWindow(o)
                     local r={Value=key} function r:Set(k) key=k;kb.Text=k.Name end function r:Get() return key end return r
                 end
 
-                -- ── SEPARATOR ─────────────
                 function S:AddSeparator()
                     local sep=new("Frame",{Size=UDim2.new(1,0,0,1),BackgroundColor3=C.Border,BorderSizePixel=0,ZIndex=6,Parent=self._i})
                     new("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(.08,0),NumberSequenceKeypoint.new(.92,0),NumberSequenceKeypoint.new(1,1)}),Parent=sep})
                 end
 
-                -- ── PROGRESS BAR ──────────
                 function S:AddProgressBar(o5)
                     o5=o5 or {}; local nm=o5.Name or "Progress"; local mx=o5.Max or 100; local cur=math.clamp(o5.Default or 0,0,mx); local pbc=o5.Color or AC
                     local wrap=new("Frame",{Size=UDim2.new(1,0,0,36),BackgroundTransparency=1,ZIndex=6,Parent=self._i})
@@ -1009,33 +889,39 @@ function Peleccos:CreateWindow(o)
                 end
 
                 return S
-            end -- AddSection
+            end
             return STAB
-        end -- AddSubTab
+        end
         return TAB
-    end -- AddTab
+    end
 
     function WO:Destroy() SG:Destroy() end
     function WO:Toggle() _vis=not _vis; WIN.Visible=_vis end
     function WO:SetAccent(c) AC=c; applyAC() end
 
-    -- ════════════════════════════════════════
-    --  BUILT-IN CONFIG TAB (hardcoded, added AFTER user tabs via task.defer)
-    -- ════════════════════════════════════════
+    -- Config tab is added via task.defer so it runs AFTER the calling script
+    -- has added all its own tabs. We also set LayoutOrder=9999 on both the
+    -- category frame and the tab button so UIListLayout always sorts them last.
     task.defer(function()
         WO:AddCategory("System")
         local TabCfg = WO:AddTab({ Name = o.ConfigName or "Config", Icon = o.ConfigIcon or "rbxassetid://0" })
 
-        -- SubTab: Interface
-        local SubUI = TabCfg:AddSubTab({ Name = "Interface" })
+        -- Force Config category + tab button to bottom via LayoutOrder
+        local kids = SIDE:GetChildren()
+        for i = #kids, math.max(1, #kids - 3), -1 do
+            local k = kids[i]
+            if k:IsA("Frame") or k:IsA("TextButton") then
+                k.LayoutOrder = 9999
+            end
+        end
 
+        local SubUI = TabCfg:AddSubTab({ Name = "Interface" })
         local SecAccent = SubUI:AddSection({ Name = "Appearance", Side = "left" })
         SecAccent:AddColorPicker({
             Name = "Accent Color",
             Default = AC,
             Callback = function(c) WO:SetAccent(c) end,
         })
-        -- Font
         SecAccent:AddDropdown({
             Name = "Font",
             Options = {"Gotham","Arial","SourceSans","Ubuntu","RobotoMono","Nunito","Oswald","FredokaOne","Creepster","PermanentMarker","Bangers","Sarpanch","SpecialElite","SciFi","Code","Highway","Cartoon","Arcade","Fantasy","Antique"},
@@ -1056,7 +942,6 @@ function Peleccos:CreateWindow(o)
                 if map[v] then setFont(map[v]) end
             end,
         })
-        -- Contraste automático
         SecAccent:AddToggle({
             Name = "Auto Contrast",
             Default = false,
@@ -1081,7 +966,6 @@ function Peleccos:CreateWindow(o)
             Callback = function() WO:Toggle() end,
         })
 
-        -- SubTab: Security
         local SubSec = TabCfg:AddSubTab({ Name = "Security" })
         local SecProt = SubSec:AddSection({ Name = "Protections", Side = "left" })
         SecProt:AddToggle({ Name = "Anti-AFK", Default = true,
@@ -1092,7 +976,7 @@ function Peleccos:CreateWindow(o)
         SecInfo:AddLabel({ Text = "Peleccos Softwares v11.0", Color = Color3.fromRGB(130,130,145), Size = 13 })
         SecInfo:AddSeparator()
         SecInfo:AddLabel({ Text = "Automatic configuration tab.", Color = Color3.fromRGB(70,70,80), Size = 11 })
-    end) -- task.defer
+    end)
 
     return WO
 end
