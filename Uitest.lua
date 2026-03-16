@@ -1039,7 +1039,8 @@ function Peleccos:CreateWindow(o)
         local _autoSave = true
 
         local function profilePath(name)
-            return PROFILES_FOLDER .. "/" .. (name or "default"):gsub("[^%w_%-]","_") .. ".json"
+            local safe = (name or "default"):gsub("[^%w_%-]","_")
+            return PROFILES_FOLDER .. "/" .. safe .. ".json"
         end
 
         local function saveProfile(name)
@@ -1058,14 +1059,11 @@ function Peleccos:CreateWindow(o)
                 if not raw or #raw < 2 then return end
                 _cfgData = game:GetService("HttpService"):JSONDecode(raw) or {}
                 for key, val in pairs(_cfgData) do
-                    local parts = key:split("|")
-                    if #parts == 4 then
-                        -- Call the setter directly so the GUI visually updates
-                        local setter = _setterReg[key]
-                        if setter then
-                            pcall(setter, val)
-                            count = count + 1
-                        end
+                    -- Use the key directly — no need to split, just look up setter
+                    local setter = _setterReg[key]
+                    if setter then
+                        pcall(setter, val)
+                        count = count + 1
                     end
                 end
             end)
@@ -1078,10 +1076,11 @@ function Peleccos:CreateWindow(o)
                 if not isfolder(PROFILES_FOLDER) then return end
                 for _, f in ipairs(listfiles(PROFILES_FOLDER)) do
                     local s = tostring(f)
-                    -- listfiles may return full path or just filename depending on executor
-                    local name = s:match("([^/\\]+)%.json$") or s:match("([^/\\]+)$")
-                    if name then
-                        name = name:gsub("%.json$", "")
+                    -- Normalize slashes and extract filename
+                    s = s:gsub("\\", "/")
+                    local name = s:match("([^/]+)$") or s
+                    name = name:gsub("%.json$", "")
+                    if name and name ~= "" then
                         table.insert(list, name)
                     end
                 end
@@ -1110,11 +1109,19 @@ function Peleccos:CreateWindow(o)
         end
 
         -- Load default profile on startup
-        task.delay(1, function() 
+        -- Load default profile after GUI is fully built
+        -- We wait for _finalized flag which is set by Win:Finalize()
+        task.spawn(function()
+            local waited = 0
+            while not _finalized and waited < 5 do
+                task.wait(0.1)
+                waited = waited + 0.1
+            end
+            task.wait(0.2) -- small buffer after finalize
             local n = loadProfile("default")
             _currentProfile = "default"
             if n > 0 then
-                notify({ Title="Config", Desc="Auto-loaded default profile ("..n.." settings)", Type="Info", Duration=3 })
+                notify({ Title="Config", Desc="Auto-loaded "..n.." settings", Type="Info", Duration=3 })
             end
         end)
 
