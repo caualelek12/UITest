@@ -902,9 +902,11 @@ function Peleccos:CreateWindow(o)
     -- Config tab is added via task.defer so it runs AFTER the calling script
     -- has added all its own tabs. We also set LayoutOrder=9999 on both the
     -- category frame and the tab button so UIListLayout always sorts them last.
-    task.defer(function()
-        -- Set _sideOrder high so System category gets 9998, Config tab gets 9999
-        -- guaranteeing both always sort after all user tabs regardless of count
+    task.spawn(function()
+        -- Wait 2 frames so the calling script has time to add all its tabs first
+        -- task.defer is not enough — it fires before the caller continues
+        RunService.Stepped:Wait()
+        RunService.Stepped:Wait()
         _sideOrder = 9998
         WO:AddCategory("System")
         local TabCfg = WO:AddTab({ Name = o.ConfigName or "Config", Icon = o.ConfigIcon or "rbxassetid://0" })
@@ -1026,67 +1028,166 @@ function Peleccos:CreateWindow(o)
             end
         end)
 
-        -- Config SubTab: Configs
-        local SubCfg = TabCfg:AddSubTab({ Name = "Configs" })
-        local SecCfgL = SubCfg:AddSection({ Name = "Save / Load", Side = "left" })
-        SecCfgL:AddLabel({ Text = "Auto-saves all toggles and sliders. Works across sessions and teleports.", Color = Color3.fromRGB(90,90,100) })
-        SecCfgL:AddButton({
-            Name = "Save Config",
-            Callback = function()
-                cfgSave()
-                notify({ Title = "Config", Desc = "Config saved!", Type = "Success", Duration = 3 })
-            end,
-        })
-        SecCfgL:AddButton({
-            Name = "Load Config",
-            Callback = function()
-                cfgLoad()
-                local count = 0
+        -- Config SubTab: Configs (named profiles)
+        local PROFILES_FOLDER = CFG_FOLDER .. "/configs"
+        pcall(function() if not isfolder(PROFILES_FOLDER) then makefolder(PROFILES_FOLDER) end end)
+
+        local _currentProfile = "default"
+        local _autoSave = true
+
+        local function profilePath(name)
+            return PROFILES_FOLDER .. "/" .. (name or "default"):gsub("[^%w_%-]","_") .. ".json"
+        end
+
+        local function saveProfile(name)
+            pcall(function()
+                if not isfolder(PROFILES_FOLDER) then makefolder(PROFILES_FOLDER) end
+                writefile(profilePath(name), game:GetService("HttpService"):JSONEncode(_cfgData))
+            end)
+        end
+
+        local function loadProfile(name)
+            local count = 0
+            pcall(function()
+                local path = profilePath(name)
+                if not isfile(path) then return end
+                local raw = readfile(path)
+                if not raw or #raw < 2 then return end
+                _cfgData = game:GetService("HttpService"):JSONDecode(raw) or {}
                 for key, val in pairs(_cfgData) do
                     local parts = key:split("|")
                     if #parts == 4 then
                         Peleccos.Events:Fire({
-                            Type    = type(val) == "boolean" and "Toggle" or "Slider",
-                            Name    = parts[4],
-                            Value   = val,
-                            Tab     = parts[1],
-                            SubTab  = parts[2],
-                            Section = parts[3],
-                            _fromLoad = true,
+                            Type      = type(val) == "boolean" and "Toggle" or "Slider",
+                            Name      = parts[4], Value   = val,
+                            Tab       = parts[1], SubTab  = parts[2],
+                            Section   = parts[3], _fromLoad = true,
                         })
                         count = count + 1
                     end
                 end
-                notify({ Title = "Config", Desc = "Loaded " .. count .. " settings.", Type = "Success", Duration = 3 })
-            end,
+            end)
+            return count
+        end
+
+        local function listProfiles()
+            local list = {}
+            pcall(function()
+                if not isfolder(PROFILES_FOLDER) then return end
+                for _, f in ipairs(listfiles(PROFILES_FOLDER)) do
+                    local name = f:match("([^/\]+)%.json$")
+                    if name then table.insert(list, name) end
+                end
+            end)
+            if #list == 0 then table.insert(list, "default") end
+            return list
+        end
+
+        local function deleteProfile(name)
+            pcall(function()
+                local path = profilePath(name)
+                if isfile(path) then delfile(path) end
+            end)
+        end
+
+        -- Auto-patch Fire to save on every change
+        local _origFireCfg = Peleccos.Events.Fire
+        Peleccos.Events.Fire = function(self2, d)
+            local r = _origFireCfg(self2, d)
+            if d and (d.Type=="Toggle" or d.Type=="Slider") and not d._fromLoad then
+                local key = (d.Tab or "").."|"..(d.SubTab or "").."|"..(d.Section or "").."|"..(d.Name or "")
+                _cfgData[key] = d.Value
+                if _autoSave then saveProfile(_currentProfile) end
+            end
+            return r
+        end
+
+        -- Load default profile on startup
+        task.defer(function() loadProfile("default"); _currentProfile = "default" end)
+
+        local SubCfg = TabCfg:AddSubTab({ Name = "Configs" })
+
+        -- LEFT: profile list + actions
+        local SecProfiles = SubCfg:AddSection({ Name = "Profiles", Side = "left" })
+
+        local _profileList = listProfiles()
+        local _selectedProfile = _profileList[1] or "default"
+
+        local profileDropRef = SecProfiles:AddDropdown({
+            Name = "Active Profile",
+            Options = _profileList,
+            Default = _selectedProfile,
+            Callback = function(v) _selectedProfile = v end,
         })
-        SecCfgL:AddButton({
-            Name = "Reset Config",
+
+        SecProfiles:AddButton({
+            Name = "Load Selected",
             Callback = function()
-                _cfgData = {}
-                pcall(function() if isfile(CFG_FILE) then delfile(CFG_FILE) end end)
-                notify({ Title = "Config", Desc = "Config reset. Restart script to apply defaults.", Type = "Warning", Duration = 4 })
+                _currentProfile = _selectedProfile
+                local n = loadProfile(_currentProfile)
+                notify({ Title="Config", Desc='Loaded "'..(_currentProfile)..'" ('..n..' settings)', Type="Success", Duration=3 })
             end,
         })
-        local SecCfgR = SubCfg:AddSection({ Name = "Auto-Save", Side = "right" })
-        SecCfgR:AddToggle({
+
+        SecProfiles:AddButton({
+            Name = "Save to Selected",
+            Callback = function()
+                _currentProfile = _selectedProfile
+                saveProfile(_currentProfile)
+                notify({ Title="Config", Desc='Saved to "'.._currentProfile..'"', Type="Success", Duration=3 })
+            end,
+        })
+
+        SecProfiles:AddButton({
+            Name = "Delete Selected",
+            Callback = function()
+                if _selectedProfile == "default" then
+                    notify({ Title="Config", Desc="Cannot delete default profile.", Type="Warning", Duration=3 })
+                    return
+                end
+                deleteProfile(_selectedProfile)
+                notify({ Title="Config", Desc='Deleted "'.._selectedProfile..'"', Type="Success", Duration=3 })
+                -- Refresh dropdown
+                local newList = listProfiles()
+                profileDropRef:SetOptions(newList)
+                _selectedProfile = newList[1] or "default"
+                profileDropRef:Set(_selectedProfile)
+            end,
+        })
+
+        -- RIGHT: create new profile + auto-save
+        local SecNewProfile = SubCfg:AddSection({ Name = "New Profile", Side = "right" })
+
+        local _newProfileName = ""
+        SecNewProfile:AddTextbox({
+            Name = "Profile Name",
+            Placeholder = "my_config",
+            Callback = function(v) _newProfileName = v:gsub("[^%w_%-]","_") end,
+        })
+
+        SecNewProfile:AddButton({
+            Name = "Create & Save",
+            Callback = function()
+                local name = _newProfileName ~= "" and _newProfileName or "profile_"..os.time()
+                saveProfile(name)
+                local newList = listProfiles()
+                profileDropRef:SetOptions(newList)
+                profileDropRef:Set(name)
+                _selectedProfile = name
+                _currentProfile  = name
+                notify({ Title="Config", Desc='Created "'..name..'"', Type="Success", Duration=3 })
+                _newProfileName = ""
+            end,
+        })
+
+        SecNewProfile:AddSeparator()
+
+        SecNewProfile:AddToggle({
             Name = "Auto-Save on Change",
             Default = true,
-            Callback = function(v)
-                if v then
-                    -- patch Fire to also write file on every change
-                    local _base = Peleccos.Events.Fire
-                    Peleccos.Events.Fire = function(self2, d)
-                        local r = _base(self2, d)
-                        if d and (d.Type=="Toggle" or d.Type=="Slider") and not d._fromLoad then
-                            cfgSave()
-                        end
-                        return r
-                    end
-                end
-            end,
+            Callback = function(v) _autoSave = v end,
         })
-        SecCfgR:AddLabel({ Text = "When on, every toggle/slider change is automatically saved to disk.", Color = Color3.fromRGB(90,90,100) })
+        SecNewProfile:AddLabel({ Text = "Saves to active profile on every toggle/slider change.", Color = Color3.fromRGB(90,90,100) })
     end)
 
     return WO
