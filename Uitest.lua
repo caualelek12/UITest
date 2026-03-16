@@ -1008,9 +1008,24 @@ function Peleccos:CreateWindow(o)
                 if not raw or #raw < 2 then return end
                 local data = HS:JSONDecode(raw) or {}
                 _cfgData = data
+                -- Debug: print registry size and first few keys
+                local regSize = 0
+                for _ in pairs(_setterReg) do regSize = regSize + 1 end
+                print("[CFG] Registry size: " .. regSize)
                 for key, val in pairs(data) do
+                    print("[CFG] Loading key: " .. tostring(key) .. " = " .. tostring(val))
                     local fn = _setterReg[key]
-                    if fn then pcall(fn, val); n = n + 1 end
+                    if fn then
+                        print("[CFG] Found setter, applying")
+                        pcall(fn, val); n = n + 1
+                    else
+                        print("[CFG] NO setter found for: " .. tostring(key))
+                        -- Print first 3 registry keys to compare
+                        local shown = 0
+                        for rk, _ in pairs(_setterReg) do
+                            if shown < 3 then print("[CFG] Registry has: " .. tostring(rk)); shown = shown + 1 end
+                        end
+                    end
                 end
             end)
             return n
