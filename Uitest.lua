@@ -903,17 +903,11 @@ function Peleccos:CreateWindow(o)
     -- has added all its own tabs. We also set LayoutOrder=9999 on both the
     -- category frame and the tab button so UIListLayout always sorts them last.
     task.defer(function()
+        -- Set _sideOrder high so System category gets 9998, Config tab gets 9999
+        -- guaranteeing both always sort after all user tabs regardless of count
+        _sideOrder = 9998
         WO:AddCategory("System")
         local TabCfg = WO:AddTab({ Name = o.ConfigName or "Config", Icon = o.ConfigIcon or "rbxassetid://0" })
-
-        -- Force Config category + tab button to bottom via LayoutOrder
-        local kids = SIDE:GetChildren()
-        for i = #kids, math.max(1, #kids - 3), -1 do
-            local k = kids[i]
-            if k:IsA("Frame") or k:IsA("TextButton") then
-                k.LayoutOrder = 9999
-            end
-        end
 
         local SubUI = TabCfg:AddSubTab({ Name = "Interface" })
         local SecAccent = SubUI:AddSection({ Name = "Appearance", Side = "left" })
@@ -976,6 +970,123 @@ function Peleccos:CreateWindow(o)
         SecInfo:AddLabel({ Text = "Peleccos Softwares v11.0", Color = Color3.fromRGB(130,130,145), Size = 13 })
         SecInfo:AddSeparator()
         SecInfo:AddLabel({ Text = "Automatic configuration tab.", Color = Color3.fromRGB(70,70,80), Size = 11 })
+
+        -- ── Built-in Config Save/Load ─────────────────────────────────────
+        -- Works with any script that uses this lib without any extra code.
+        -- Saves/loads all Toggle and Slider values by their Name+Section key.
+        local CFG_FOLDER = "PeleccosSoftwares"
+        local CFG_FILE   = CFG_FOLDER .. "/ui_config.json"
+        local _cfgData   = {}  -- name → value
+
+        local function cfgSave()
+            pcall(function()
+                if not isfolder(CFG_FOLDER) then makefolder(CFG_FOLDER) end
+                writefile(CFG_FILE, game:GetService("HttpService"):JSONEncode(_cfgData))
+            end)
+        end
+
+        local function cfgLoad()
+            pcall(function()
+                if not isfile(CFG_FILE) then return end
+                local raw = readfile(CFG_FILE)
+                if raw and #raw > 1 then
+                    _cfgData = game:GetService("HttpService"):JSONDecode(raw) or {}
+                end
+            end)
+        end
+
+        -- Wrap the event bus so every Toggle/Slider change is intercepted
+        -- and saved without modifying the calling script at all
+        local _origFire = Peleccos.Events.Fire
+        Peleccos.Events.Fire = function(self, d)
+            if d and (d.Type == "Toggle" or d.Type == "Slider") then
+                local key = (d.Tab or "") .. "|" .. (d.SubTab or "") .. "|" .. (d.Section or "") .. "|" .. (d.Name or "")
+                _cfgData[key] = d.Value
+            end
+            return _origFire(self, d)
+        end
+
+        -- Restore saved values on next frame (after GUI is fully built)
+        task.defer(function()
+            cfgLoad()
+            for key, val in pairs(_cfgData) do
+                -- Fire a fake event so listeners update their internal state
+                local parts = key:split("|")
+                if #parts == 4 then
+                    Peleccos.Events:Fire({
+                        Type    = type(val) == "boolean" and "Toggle" or "Slider",
+                        Name    = parts[4],
+                        Value   = val,
+                        Tab     = parts[1],
+                        SubTab  = parts[2],
+                        Section = parts[3],
+                        _fromLoad = true,
+                    })
+                end
+            end
+        end)
+
+        -- Config SubTab: Configs
+        local SubCfg = TabCfg:AddSubTab({ Name = "Configs" })
+        local SecCfgL = SubCfg:AddSection({ Name = "Save / Load", Side = "left" })
+        SecCfgL:AddLabel({ Text = "Auto-saves all toggles and sliders. Works across sessions and teleports.", Color = Color3.fromRGB(90,90,100) })
+        SecCfgL:AddButton({
+            Name = "Save Config",
+            Callback = function()
+                cfgSave()
+                notify({ Title = "Config", Desc = "Config saved!", Type = "Success", Duration = 3 })
+            end,
+        })
+        SecCfgL:AddButton({
+            Name = "Load Config",
+            Callback = function()
+                cfgLoad()
+                local count = 0
+                for key, val in pairs(_cfgData) do
+                    local parts = key:split("|")
+                    if #parts == 4 then
+                        Peleccos.Events:Fire({
+                            Type    = type(val) == "boolean" and "Toggle" or "Slider",
+                            Name    = parts[4],
+                            Value   = val,
+                            Tab     = parts[1],
+                            SubTab  = parts[2],
+                            Section = parts[3],
+                            _fromLoad = true,
+                        })
+                        count = count + 1
+                    end
+                end
+                notify({ Title = "Config", Desc = "Loaded " .. count .. " settings.", Type = "Success", Duration = 3 })
+            end,
+        })
+        SecCfgL:AddButton({
+            Name = "Reset Config",
+            Callback = function()
+                _cfgData = {}
+                pcall(function() if isfile(CFG_FILE) then delfile(CFG_FILE) end end)
+                notify({ Title = "Config", Desc = "Config reset. Restart script to apply defaults.", Type = "Warning", Duration = 4 })
+            end,
+        })
+        local SecCfgR = SubCfg:AddSection({ Name = "Auto-Save", Side = "right" })
+        SecCfgR:AddToggle({
+            Name = "Auto-Save on Change",
+            Default = true,
+            Callback = function(v)
+                if v then
+                    -- patch Fire to also write file on every change
+                    local _base = Peleccos.Events.Fire
+                    Peleccos.Events.Fire = function(self2, d)
+                        local r = _base(self2, d)
+                        if d and (d.Type=="Toggle" or d.Type=="Slider") and not d._fromLoad then
+                            cfgSave()
+                        end
+                        return r
+                    end
+                end
+            end,
+        })
+        SecCfgR:AddLabel({ Text = "When on, every toggle/slider change is automatically saved to disk.", Color = Color3.fromRGB(90,90,100) })
     end)
 
     return WO
