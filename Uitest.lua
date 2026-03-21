@@ -903,9 +903,6 @@ function Peleccos:CreateWindow(o)
     function WO:Toggle() _vis=not _vis; WIN.Visible=_vis end
     function WO:SetAccent(c) AC=c; applyAC() end
 
-    -- Config tab is added via task.defer so it runs AFTER the calling script
-    -- has added all its own tabs. We also set LayoutOrder=9999 on both the
-    -- category frame and the tab button so UIListLayout always sorts them last.
     local _finalized = false
     local function _finalizeConfig()
         if _finalized then return end
@@ -980,7 +977,6 @@ function Peleccos:CreateWindow(o)
         local HS           = game:GetService("HttpService")
         local CFG_FOLDER   = "PeleccosSoftwares"
         local PRF_FOLDER   = CFG_FOLDER .. "/configs"
-        local _autoSave    = true
         local _curProfile  = "default"
         local _cfgData     = {}
 
@@ -1019,7 +1015,7 @@ function Peleccos:CreateWindow(o)
             return n
         end
 
-                local function pList()
+        local function pList()
             local list = {}
             pcall(function()
                 if not isfolder(PRF_FOLDER) then return end
@@ -1041,28 +1037,6 @@ function Peleccos:CreateWindow(o)
                 if isfile(ppath(name)) then delfile(ppath(name)) end
             end)
         end
-
-        -- Intercept Events:Fire to capture toggle/slider changes
-        -- Use Connect so it works with the EvBus system properly
-        Peleccos.Events:Connect(function(d)
-            if not d or _isLoading then return end
-            if d.Type ~= "Toggle" and d.Type ~= "Slider" then return end
-            local key = (d.Tab or "").."|"..(d.SubTab or "").."|"..(d.Section or "").."|"..(d.Name or "")
-            _cfgData[key] = d.Value
-            if _autoSave then pSave(_curProfile) end
-        end)
-
-        -- Auto-load default profile after GUI is ready
-        task.spawn(function()
-            local w = 0
-            while not _finalized and w < 5 do task.wait(0.1); w=w+0.1 end
-            task.wait(0.3)
-            local n = pLoad("default")
-            _curProfile = "default"
-            if n > 0 then
-                notify({ Title="Config", Desc="Loaded "..n.." settings", Type="Info", Duration=3 })
-            end
-        end)
 
         -- Configs subtab
         local SubCfg  = TabCfg:AddSubTab({ Name = "Configs" })
@@ -1130,13 +1104,6 @@ function Peleccos:CreateWindow(o)
                 _newName = ""
             end,
         })
-        SecPrfR:AddSeparator()
-        SecPrfR:AddToggle({
-            Name     = "Auto-Save on Change",
-            Default  = true,
-            Callback = function(v) _autoSave = v end,
-        })
-        SecPrfR:AddLabel({ Text = "Saves to active profile on every toggle/slider change.", Color = Color3.fromRGB(90,90,100) })
     end
 
     -- Auto-finalize after 0.5s if script never calls Finalize()
