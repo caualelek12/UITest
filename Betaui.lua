@@ -897,7 +897,7 @@ function Peleccos:CreateWindow(o)
         corner(panel,RC.sharp); stroke(panel,C.br0,1)
         local pHdr=mk("Frame",{Size=dim2(1,0,0,24),BackgroundColor3=rgb(0,0,0),BackgroundTransparency=0.5,ZIndex=502,Parent=panel})
         mk("TextLabel",{Text="EASTER EGG",Size=dim2(1,0,1,0),BackgroundTransparency=1,TextColor3=AC,TextSize=12,Font=Enum.Font.GothamBold,ZIndex=503,Parent=pHdr})
-        onAC(function(c) pHdr:FindFirstChildWhichIsA("TextLabel") and (pHdr:FindFirstChildWhichIsA("TextLabel").TextColor3=c) end)
+        onAC(function(c) pHdr:FindFirstChildWhichIsA("TextLabel")  (pHdr:FindFirstChildWhichIsA("TextLabel").TextColor3==c) end)
         mk("TextLabel",{
             Text="youtu.be/"..vid.id.."\n\n"..(vid.loop and "[Looping]" or "").."\n\nSaved to: ".._DIR.."/videos/",
             Size=dim2(1,-20,0,88), Position=dim2(0,10,0,30),
