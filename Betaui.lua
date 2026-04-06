@@ -1,29 +1,28 @@
 --[[
-    PeleccosSoftwares v12.0
-    Redesigned from scratch — bar sits above Roblox safe-area inset,
-    Milenium-inspired internals, no generic AI aesthetics.
+    PeleccosSoftwares v12.1
+    Changes:
+    - Settings window matches main window visually (same bg image, blocky border)
+    - Blocky outer border + softer inner elements, better contrast
+    - Colors tuned for dark bg image
+    - Top bar sits above ALL Roblox UI (DisplayOrder trick)
+    - Category tabs: minimal width, auto-expand to name
+    - Easter egg: custom image loader via muglios server
+    - Main window: drag only via inner content area handle
+    - Watermark settings: only ConfigName editable; others are dev-set or auto
 
-    API:
-        local Lib = loadstring(readfile("PeleccosSoftwares_v12.lua"))()
+    API (unchanged):
+        local Lib = loadstring(readfile("Betaui.lua"))()
         local Win = Lib:CreateWindow({
             Title       = "MyScript",
             Background  = "rbxassetid://118298630077545",
             AccentColor = Color3.fromRGB(180, 180, 180),
             Key         = Enum.KeyCode.Insert,
-            UserName    = "Player",
             ConfigName  = "Default",
             BuildType   = "Public",
         })
         local Cat = Win:AddCategory("Combat")
         Cat:AddToggle({ Name="Aimbot", Default=false, Callback=function(v) end })
-        Cat:AddSlider({ Name="FOV", Min=10, Max=360, Step=1, Default=90, Suffix="°", Callback=function(v) end })
-        Cat:AddButton({ Name="Teleport", Callback=function() end })
-        Cat:AddLabel({ Text="v1.0" })
-        Cat:AddDropdown({ Name="Team", Options={"Red","Blue"}, Callback=function(v) end })
-        Cat:AddColorPicker({ Name="Color", Default=Color3.fromRGB(255,80,80), Callback=function(c) end })
-        Cat:AddKeybind({ Name="Quick Toggle", Default=Enum.KeyCode.F, Callback=function() end })
-        Cat:AddTextbox({ Name="Player", Placeholder="name...", Callback=function(v) end })
-        Cat:AddProgressBar({ Name="Loading", Max=100, Default=72 })
+        ...
 ]]
 
 -- ═══════════════════════════════════════════════════════════════
@@ -36,7 +35,6 @@ local RunService   = game:GetService("RunService")
 local GuiService   = game:GetService("GuiService")
 local LP           = Players.LocalPlayer
 
--- Safe-area inset (how many pixels Roblox pushes the top bar down)
 local GUI_INSET = GuiService:GetGuiInset().Y  -- typically 36px
 
 -- ═══════════════════════════════════════════════════════════════
@@ -44,8 +42,33 @@ local GUI_INSET = GuiService:GetGuiInset().Y  -- typically 36px
 -- ═══════════════════════════════════════════════════════════════
 local _DIR = "PeleccosSoftwares"
 pcall(function() if not isfolder(_DIR) then makefolder(_DIR) end end)
-pcall(function() if not isfolder(_DIR.."/videos") then makefolder(_DIR.."/videos") end end)
+pcall(function() if not isfolder(_DIR.."/eggs") then makefolder(_DIR.."/eggs") end end)
 pcall(function() if not isfolder(_DIR.."/configs") then makefolder(_DIR.."/configs") end end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- EASTER EGG IMAGE LOADER
+-- ═══════════════════════════════════════════════════════════════
+local BASE_URL = "http://muglios.ddns.net:45905/"
+local function loadImage(path)
+    if not (typeof(isfile)=="function" and typeof(writefile)=="function" and typeof(getcustomasset)=="function") then
+        return ""
+    end
+    local fileName = _DIR.."/eggs/"..(path:match("[^/]+$") or path)
+    local url = BASE_URL .. path
+    local result = ""
+    pcall(function()
+        if not isfile(fileName) then
+            local data = game:HttpGet(url)
+            if not data or #data < 4 then return end
+            if data:sub(1,4) ~= "\137PNG" then return end
+            writefile(fileName, data)
+        end
+        if isfile(fileName) then
+            result = getcustomasset(fileName) or ""
+        end
+    end)
+    return result
+end
 
 -- ═══════════════════════════════════════════════════════════════
 -- PRIMITIVE HELPERS
@@ -72,17 +95,16 @@ local function mk(cls, props)
     return o
 end
 
--- corner radius presets
 local RC = {
     none  = dim(0,0),
-    sharp = dim(0,3),   -- outer shell (blocky feel)
-    soft  = dim(0,5),   -- inner elements
-    mid   = dim(0,7),   -- section headers, cards
-    pill  = dim(0,999), -- toggle tracks, accents
+    sharp = dim(0,4),   -- outer blocky
+    soft  = dim(0,6),   -- inner elements
+    mid   = dim(0,8),
+    pill  = dim(0,999),
 }
 
-local function corner(p, r)  local c=Instance.new("UICorner"); c.CornerRadius=r or RC.soft;   c.Parent=p; return c end
-local function stroke(p,col,t) local s=Instance.new("UIStroke"); s.Color=col or rgb(35,35,38); s.Thickness=t or 1; s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; s.Parent=p; return s end
+local function corner(p, r)  local c=Instance.new("UICorner"); c.CornerRadius=r or RC.soft; c.Parent=p; return c end
+local function stroke(p,col,t,trans) local s=Instance.new("UIStroke"); s.Color=col or rgb(50,50,55); s.Thickness=t or 1.5; s.Transparency=trans or 0; s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; s.Parent=p; return s end
 local function padding(p,t,r,b,l) local u=Instance.new("UIPadding"); u.PaddingTop=dim(0,t or 0); u.PaddingRight=dim(0,r or 0); u.PaddingBottom=dim(0,b or 0); u.PaddingLeft=dim(0,l or 0); u.Parent=p; return u end
 local function layout(p,dir,gap,ha,va) local l=Instance.new("UIListLayout"); l.FillDirection=dir or Enum.FillDirection.Vertical; l.Padding=dim(0,gap or 0); l.HorizontalAlignment=ha or Enum.HorizontalAlignment.Left; l.VerticalAlignment=va or Enum.VerticalAlignment.Top; l.SortOrder=Enum.SortOrder.LayoutOrder; l.Parent=p; return l end
 local function autoCanvas(sf)
@@ -90,6 +112,7 @@ local function autoCanvas(sf)
     local function upd() task.defer(function() if sf and sf.Parent then sf.CanvasSize=dim2(0,0,0,ll.AbsoluteContentSize.Y+14) end end) end
     ll:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(upd); upd()
 end
+
 local function draggify(frame, handle)
     local drag,ds,sp = false,nil,nil
     handle = handle or frame
@@ -106,24 +129,20 @@ local function draggify(frame, handle)
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- PALETTE  (Milenium-inspired dark grey, minimal)
+-- PALETTE  — tuned for dark textured backgrounds
 -- ═══════════════════════════════════════════════════════════════
 local C = {
-    -- backgrounds
-    bg0      = rgb(14, 14, 16),   -- deepest bg (main window)
-    bg1      = rgb(19, 19, 21),   -- section shell
-    bg2      = rgb(22, 22, 24),   -- section inner
-    bg3      = rgb(28, 28, 31),   -- element bg / input
-    bg4      = rgb(33, 33, 36),   -- button / slider track
-    -- borders
-    br0      = rgb(23, 23, 29),   -- outer stroke
-    br1      = rgb(36, 36, 38),   -- separator
-    br2      = rgb(50, 50, 54),   -- highlight stroke
-    -- text
-    t0       = rgb(245,245,248),  -- primary text
-    t1       = rgb(175,175,182),  -- secondary text
-    t2       = rgb(95, 95,100),   -- muted / placeholder
-    -- notification types
+    bg0      = rgb(10, 10, 12),
+    bg1      = rgb(16, 16, 19),
+    bg2      = rgb(20, 20, 23),
+    bg3      = rgb(26, 26, 30),
+    bg4      = rgb(34, 34, 39),
+    br0      = rgb(55, 55, 62),   -- outer stroke (more visible now)
+    br1      = rgb(42, 42, 48),
+    br2      = rgb(70, 70, 78),
+    t0       = rgb(240,240,244),
+    t1       = rgb(170,170,178),
+    t2       = rgb(90, 90, 98),
     nOk      = rgb(50,200,100),
     nWarn    = rgb(255,185,0),
     nErr     = rgb(255,60,60),
@@ -131,7 +150,7 @@ local C = {
 }
 
 -- ═══════════════════════════════════════════════════════════════
--- FPS / PING  (live)
+-- FPS / PING  (live, auto-detected — not user-editable)
 -- ═══════════════════════════════════════════════════════════════
 local _fps, _ping = 60, 0
 RunService.Heartbeat:Connect(function(dt) _fps = math.clamp(math.floor(1/dt),0,999) end)
@@ -144,31 +163,25 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════
--- EASTER EGG DATA
+-- EASTER EGG DATA  (image paths served from muglios server)
 -- ═══════════════════════════════════════════════════════════════
-local EASTER_VIDS = {
-    {id="MUwoJJNAwhI",loop=false},{id="pKBTU3jTUQU",loop=false},
-    {id="KcrtcnvkcWQ",loop=true },{id="HnH1MgwJFvY",loop=false},
-    {id="igmpRziaOqc",loop=false},{id="I0lA3rHbFuE",loop=false},
-    {id="u-fOF9Wlpd8",loop=false},{id="PHvhOPM_5ak",loop=true },
-    {id="Fy69pNzf9iE",loop=false},{id="7xO4u-lzsYU",loop=false},
-    {id="WnOWVSYNMFw",loop=false},{id="1L1WkeRR-EQ",loop=true },
-    {id="NoR9zrJiSLc",loop=false},{id="JabG22Zl02I",loop=false},
-    {id="YmHZI03a_Yo",loop=false},{id="mHJ3l18YqNM",loop=false},
+local EASTER_IMGS = {
+    "eggs/egg1.png",
+    "eggs/egg2.png",
+    "eggs/egg3.png",
 }
 local EASTER_KW = {"peleccos","easter","egg","secret","hidden","password","cheat","hack","admin","god","infinite","unlimited","special","rare","legendary"}
 
 -- ═══════════════════════════════════════════════════════════════
--- NOTIFICATION SYSTEM  (Milenium-style, bottom-left stacking)
+-- NOTIFICATION SYSTEM
 -- ═══════════════════════════════════════════════════════════════
-local _notifHolder, _notifList = nil, {}
+local _notifHolder = nil
 
 local function initNotifs(sg)
-    -- bottom-right corner, above safe area
     _notifHolder = mk("Frame",{
-        Size=dim2(0,240,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+        Size=dim2(0,244,0,0), AutomaticSize=Enum.AutomaticSize.Y,
         AnchorPoint=Vector2.new(1,1),
-        Position=dim2(1,-12,1,-12),
+        Position=dim2(1,-14,1,-14),
         BackgroundTransparency=1, ZIndex=500, Parent=sg,
     })
     layout(_notifHolder, Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom)
@@ -185,9 +198,8 @@ local function notify(o)
         ZIndex=501, Parent=_notifHolder,
     })
     corner(card, RC.sharp)
-    stroke(card, C.br0, 1)
+    stroke(card, C.br0, 1.5)
 
-    -- left accent bar
     local bar = mk("Frame",{Size=dim2(0,3,1,0), BackgroundColor3=ac, ZIndex=502, Parent=card})
 
     local inner = mk("Frame",{
@@ -197,10 +209,7 @@ local function notify(o)
     padding(inner, 9,9,9,10)
     layout(inner, Enum.FillDirection.Vertical, 4)
 
-    -- type badge + title row
-    local hrow = mk("Frame",{
-        Size=dim2(1,0,0,16), BackgroundTransparency=1, ZIndex=503, Parent=inner,
-    })
+    local hrow = mk("Frame",{Size=dim2(1,0,0,16), BackgroundTransparency=1, ZIndex=503, Parent=inner})
     layout(hrow, Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
 
     local typeTxt = ({Success="OK",Warning="!!",Error="XX",Info="??"})[o.Type or "Info"] or "??"
@@ -213,8 +222,7 @@ local function notify(o)
     corner(badge, RC.sharp)
 
     mk("TextLabel",{
-        Text=o.Title or "Notice",
-        Size=dim2(1,-28,1,0),
+        Text=o.Title or "Notice", Size=dim2(1,-28,1,0),
         BackgroundTransparency=1, TextColor3=C.t0,
         TextSize=12, Font=Enum.Font.GothamBold,
         TextXAlignment=Enum.TextXAlignment.Left,
@@ -223,8 +231,7 @@ local function notify(o)
 
     if o.Desc and o.Desc ~= "" then
         mk("TextLabel",{
-            Text=o.Desc,
-            Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+            Text=o.Desc, Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
             BackgroundTransparency=1, TextColor3=C.t2,
             TextSize=10, Font=Enum.Font.Gotham,
             TextXAlignment=Enum.TextXAlignment.Left, TextWrapped=true,
@@ -232,16 +239,10 @@ local function notify(o)
         })
     end
 
-    -- progress bar at bottom of card
-    local progBg = mk("Frame",{
-        Size=dim2(1,0,0,2), BackgroundColor3=C.bg4, ZIndex=503, Parent=inner,
-    })
-    local progFill = mk("Frame",{
-        Size=dim2(1,0,1,0), BackgroundColor3=ac, ZIndex=504, Parent=progBg,
-    })
+    local progBg = mk("Frame",{Size=dim2(1,0,0,2), BackgroundColor3=C.bg4, ZIndex=503, Parent=inner})
+    local progFill = mk("Frame",{Size=dim2(1,0,1,0), BackgroundColor3=ac, ZIndex=504, Parent=progBg})
 
-    -- animate in
-    tw(card, {BackgroundTransparency=0, Position=dim2(0,0,0,0)}, Enum.EasingStyle.Back, 0.3, Enum.EasingDirection.Out)
+    tw(card, {BackgroundTransparency=0}, Enum.EasingStyle.Back, 0.3, Enum.EasingDirection.Out)
     local dur = o.Duration or 4
     tw(progFill, {Size=dim2(0,0,1,0)}, Enum.EasingStyle.Linear, dur)
     task.delay(dur, function()
@@ -251,11 +252,11 @@ local function notify(o)
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- HSV COLOR PICKER  (shared builder)
+-- HSV COLOR PICKER
 -- ═══════════════════════════════════════════════════════════════
 local function buildColorPicker(ov, anchor, h0, s0, v0, onUpdate, SG_ref)
     local ch,cs,cv = h0,s0,v0
-    local pw,ph = 210,148
+    local pw,ph = 214,152
     local ap = anchor.AbsolutePosition
     local px = math.min(ap.X, SG_ref.AbsoluteSize.X-pw-10)
     local py = ap.Y + anchor.AbsoluteSize.Y + 6
@@ -263,45 +264,36 @@ local function buildColorPicker(ov, anchor, h0, s0, v0, onUpdate, SG_ref)
 
     local pan = mk("TextButton",{
         AutoButtonColor=false, Text="",
-        Size=dim2(0,pw,0,0),
-        Position=dim2(0,px,0,py),
+        Size=dim2(0,pw,0,0), Position=dim2(0,px,0,py),
         BackgroundColor3=C.bg1, ZIndex=220, Parent=ov,
     })
-    corner(pan, RC.sharp); stroke(pan, C.br0, 1)
+    corner(pan, RC.sharp); stroke(pan, C.br0, 1.5)
     tw(pan, {Size=dim2(0,pw,0,ph)}, Enum.EasingStyle.Back, 0.18)
 
-    -- SV field
     local svbg = mk("Frame",{
-        Size=dim2(1,-12,0,84), Position=dim2(0,6,0,6),
+        Size=dim2(1,-12,0,86), Position=dim2(0,6,0,6),
         BackgroundColor3=hsv(ch,1,1), ZIndex=221, Parent=pan,
     })
     corner(svbg, RC.sharp)
 
-    -- white gradient (sat)
     local wg = mk("Frame",{Size=dim2(1,0,1,0), BackgroundColor3=rgb(255,255,255), ZIndex=222, Parent=svbg})
     corner(wg, RC.sharp)
     mk("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)}), Parent=wg})
-    -- black gradient (val)
-    local bg2 = mk("Frame",{Size=dim2(1,0,1,0), BackgroundColor3=rgb(0,0,0), ZIndex=223, Parent=svbg})
-    corner(bg2, RC.sharp)
-    mk("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}), Rotation=90, Parent=bg2})
+    local bg2f = mk("Frame",{Size=dim2(1,0,1,0), BackgroundColor3=rgb(0,0,0), ZIndex=223, Parent=svbg})
+    corner(bg2f, RC.sharp)
+    mk("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}), Rotation=90, Parent=bg2f})
 
-    -- SV cursor
     local svc = mk("TextButton",{
         AutoButtonColor=false, Text="",
-        AnchorPoint=Vector2.new(.5,.5),
-        Size=dim2(0,9,0,9),
+        AnchorPoint=Vector2.new(.5,.5), Size=dim2(0,10,0,10),
         Position=dim2(cs,0,1-cv,0),
         BackgroundColor3=rgb(255,255,255), ZIndex=226, Parent=svbg,
     })
-    corner(svc, RC.pill)
-    stroke(svc, rgb(0,0,0), 1.5)
+    corner(svc, RC.pill); stroke(svc, rgb(0,0,0), 1.5)
 
-    -- hue bar
     local hueBar = mk("TextButton",{
         AutoButtonColor=false, Text="",
-        Size=dim2(1,-12,0,9),
-        Position=dim2(0,6,0,96),
+        Size=dim2(1,-12,0,9), Position=dim2(0,6,0,98),
         ZIndex=221, Parent=pan,
     })
     corner(hueBar, RC.pill)
@@ -315,20 +307,15 @@ local function buildColorPicker(ov, anchor, h0, s0, v0, onUpdate, SG_ref)
         ColorSequenceKeypoint.new(1,   rgb(255,0,0)),
     }), Parent=hueBar})
     local hueCursor = mk("Frame",{
-        AnchorPoint=Vector2.new(.5,.5),
-        Size=dim2(0,9,1,2),
+        AnchorPoint=Vector2.new(.5,.5), Size=dim2(0,10,1,2),
         Position=dim2(ch,0,.5,0),
         BackgroundColor3=rgb(255,255,255), ZIndex=223, Parent=hueBar,
     })
-    corner(hueCursor, RC.sharp)
-    stroke(hueCursor, rgb(0,0,0), 1)
+    corner(hueCursor, RC.sharp); stroke(hueCursor, rgb(0,0,0), 1)
 
-    -- preview
     local prev = mk("Frame",{
-        Size=dim2(1,-12,0,11),
-        Position=dim2(0,6,0,113),
-        BackgroundColor3=hsv(ch,cs,cv),
-        ZIndex=221, Parent=pan,
+        Size=dim2(1,-12,0,12), Position=dim2(0,6,0,113),
+        BackgroundColor3=hsv(ch,cs,cv), ZIndex=221, Parent=pan,
     })
     corner(prev, RC.sharp)
 
@@ -375,6 +362,54 @@ local function buildColorPicker(ov, anchor, h0, s0, v0, onUpdate, SG_ref)
 end
 
 -- ═══════════════════════════════════════════════════════════════
+-- SHARED WINDOW BUILDER  (used for both Main and Settings windows)
+-- Returns: outerFrame, contentScrollFrame, dragHandleFrame
+-- ═══════════════════════════════════════════════════════════════
+local function buildWindow(parent, size, pos, zBase, bgImage, onAC_reg)
+    -- Outer frame: blocky border (RC.sharp, visible stroke)
+    local outer = mk("Frame",{
+        BackgroundColor3=rgb(8,8,10),
+        BorderSizePixel=0,
+        Size=size, Position=pos,
+        ZIndex=zBase, Parent=parent,
+    })
+    -- Prominent blocky outer stroke
+    local outerStroke = stroke(outer, C.br0, 2)
+
+    -- Background image (fills inside with slight inset)
+    local img = mk("ImageLabel",{
+        Name="BgImage", BorderSizePixel=0,
+        BackgroundColor3=rgb(6,6,8),
+        AnchorPoint=Vector2.new(.5,.5),
+        Image=bgImage or "",
+        Size=dim2(1,-4,1,-4),
+        Position=dim2(.5,0,.5,0),
+        ZIndex=zBase+1, Parent=outer,
+    })
+    corner(img, RC.soft)  -- inner image corners are softer
+
+    -- Dark readability overlay
+    local ov = mk("Frame",{
+        Size=dim2(1,0,1,0), BackgroundColor3=rgb(0,0,0),
+        BackgroundTransparency=0.38, ZIndex=zBase+2, Parent=img,
+    })
+    corner(ov, RC.soft)
+
+    -- Drag handle (sits behind content, covers inner image)
+    local dragHandle = mk("TextButton",{
+        Size=dim2(1,0,1,0), BackgroundTransparency=1,
+        Text="", AutoButtonColor=false,
+        ZIndex=zBase+2, Parent=img,
+    })
+
+    if onAC_reg then
+        onAC_reg(function(c) outerStroke.Color = c end)
+    end
+
+    return outer, img, dragHandle, ov
+end
+
+-- ═══════════════════════════════════════════════════════════════
 -- LIBRARY
 -- ═══════════════════════════════════════════════════════════════
 local Peleccos = {}; Peleccos.__index = Peleccos
@@ -383,38 +418,35 @@ function Peleccos:CreateWindow(o)
     o = o or {}
 
     -- destroy previous instance
-    for _, name in ipairs({"PeleccosV12"}) do
-        pcall(function() game:GetService("CoreGui"):FindFirstChild(name):Destroy() end)
-        pcall(function() local pg=LP:FindFirstChild("PlayerGui"); if pg then local x=pg:FindFirstChild(name); if x then x:Destroy() end end end)
-    end
+    pcall(function() game:GetService("CoreGui"):FindFirstChild("PeleccosV12"):Destroy() end)
+    pcall(function() local pg=LP:FindFirstChild("PlayerGui"); if pg then local x=pg:FindFirstChild("PeleccosV12"); if x then x:Destroy() end end end)
 
-    local AC  = o.AccentColor or rgb(180,180,180)
+    local AC  = o.AccentColor or rgb(160,160,170)
     local KEY = o.Key or Enum.KeyCode.Insert
     local BG_IMAGE = o.Background or "rbxassetid://118298630077545"
 
-    -- accent callbacks
     local _acCBs = {}
     local function onAC(fn) table.insert(_acCBs,fn) end
     local function fireAC() for _,fn in ipairs(_acCBs) do pcall(fn,AC) end end
 
-    -- live config / watermark state
+    -- Dev-set fields (not shown in Settings UI, set via CreateWindow args only)
     local CFG = {
         ScriptName = o.Title      or "PeleccosSoftwares",
-        UserName   = o.UserName   or (LP and LP.Name or "User"),
-        ConfigName = o.ConfigName or "Default",
-        BuildType  = o.BuildType  or "Public",
-        GameName   = o.GameName   or tostring(game.Name or "Unknown"),
-        GameId     = o.GameId     or tostring(game.GameId or 0),
-        BgColor    = o.BgColor    or rgb(14,14,16),
+        UserName   = LP and LP.Name or "User",     -- auto-detected
+        ConfigName = o.ConfigName or "Default",    -- editable at runtime via Settings
+        BuildType  = o.BuildType  or "Public",     -- dev-set
+        GameName   = tostring(game.Name or "Unknown"), -- auto-detected
+        GameId     = tostring(game.GameId or 0),       -- auto-detected
         ShowWM     = true,
     }
 
-    -- ── ScreenGui with IgnoreGuiInset so we can go above the top bar ──
+    -- ── ScreenGui — IgnoreGuiInset + highest DisplayOrder to beat Roblox UI ──
     local SG = mk("ScreenGui",{
         Name="PeleccosV12",
         ResetOnSpawn=false,
         ZIndexBehavior=Enum.ZIndexBehavior.Global,
-        IgnoreGuiInset=true,   -- key: renders from pixel (0,0), above safe area
+        IgnoreGuiInset=true,
+        DisplayOrder=999,   -- above Roblox top bar buttons
     })
     local ok = pcall(function() SG.Parent = game:GetService("CoreGui") end)
     if not ok then SG.Parent = LP:WaitForChild("PlayerGui") end
@@ -435,21 +467,19 @@ function Peleccos:CreateWindow(o)
     end
 
     -- ══════════════════════════════════════════════════════════
-    -- TOP BAR  — IgnoreGuiInset lets us sit at Y=0, above Roblox chrome
-    -- Height is fixed at GUI_INSET pixels so it fills exactly the top strip
+    -- TOP BAR  — slim, sits above everything at Y=0
     -- ══════════════════════════════════════════════════════════
-    local BAR_H = math.max(GUI_INSET, 28)  -- at least 28px tall
+    local BAR_H = 24  -- slimmer than before (was ~36)
 
     local BAR = mk("Frame",{
         Name="Bar",
         Size=dim2(1,0,0,BAR_H),
-        Position=dim2(0,0,0,0),   -- literal screen top
-        BackgroundColor3=rgb(10,10,12),
+        Position=dim2(0,0,0,0),
+        BackgroundColor3=rgb(8,8,10),
         BorderSizePixel=0,
-        ZIndex=50,
-        Parent=SG,
+        ZIndex=50, Parent=SG,
     })
-    -- thin accent bottom-line
+    -- Bottom accent line
     local barLine = mk("Frame",{
         Size=dim2(1,0,0,1), AnchorPoint=Vector2.new(0,1),
         Position=dim2(0,0,1,0),
@@ -457,37 +487,40 @@ function Peleccos:CreateWindow(o)
     })
     onAC(function(c) barLine.BackgroundColor3=c end)
 
-    -- Easter Egg button (left, hidden)
+    -- Separator stroke on top bar
+    stroke(BAR, C.br1, 1)
+
+    -- Easter Egg button (left, hidden until triggered)
     local EGG_BTN = mk("TextButton",{
-        Text="Easter Egg",
-        TextColor3=C.t0, TextSize=11, Font=Enum.Font.GothamSemibold,
+        Text="🥚 Easter",
+        TextColor3=C.t0, TextSize=10, Font=Enum.Font.GothamSemibold,
         BackgroundColor3=C.bg4,
-        Size=dim2(0,90,0,BAR_H-6),
-        Position=dim2(0,3,0,3),
+        AutomaticSize=Enum.AutomaticSize.X,
+        Size=dim2(0,0,0,BAR_H-5),
+        Position=dim2(0,3,0,2),
         AutoButtonColor=false, BorderSizePixel=0,
         ZIndex=52, Visible=false, Parent=BAR,
     })
-    corner(EGG_BTN, RC.sharp)
-    stroke(EGG_BTN, C.br0, 1)
+    corner(EGG_BTN, RC.sharp); stroke(EGG_BTN, C.br0, 1)
+    padding(EGG_BTN, 0,7,0,7)
     EGG_BTN.MouseEnter:Connect(function() tw(EGG_BTN,{BackgroundColor3=C.bg3},Enum.EasingStyle.Quint,0.1) end)
     EGG_BTN.MouseLeave:Connect(function() tw(EGG_BTN,{BackgroundColor3=C.bg4},Enum.EasingStyle.Quint,0.1) end)
 
     -- Settings button (right)
     local SET_BTN = mk("TextButton",{
         Text="Settings",
-        TextColor3=C.t1, TextSize=11, Font=Enum.Font.GothamSemibold,
+        TextColor3=C.t1, TextSize=10, Font=Enum.Font.GothamSemibold,
         BackgroundColor3=C.bg4,
-        Size=dim2(0,68,0,BAR_H-6),
-        Position=dim2(1,-71,0,3),
+        Size=dim2(0,62,0,BAR_H-5),
+        Position=dim2(1,-65,0,2),
         AutoButtonColor=false, BorderSizePixel=0,
         ZIndex=52, Parent=BAR,
     })
-    corner(SET_BTN, RC.sharp)
-    stroke(SET_BTN, C.br0, 1)
+    corner(SET_BTN, RC.sharp); stroke(SET_BTN, C.br0, 1)
     SET_BTN.MouseEnter:Connect(function() tw(SET_BTN,{BackgroundColor3=C.bg3,TextColor3=C.t0},Enum.EasingStyle.Quint,0.1) end)
     SET_BTN.MouseLeave:Connect(function() tw(SET_BTN,{BackgroundColor3=C.bg4,TextColor3=C.t1},Enum.EasingStyle.Quint,0.1) end)
 
-    -- Category scroll (centre)
+    -- Category scroll (centre of bar)
     local CAT_SF = mk("ScrollingFrame",{
         BackgroundTransparency=1, BorderSizePixel=0,
         ScrollingDirection=Enum.ScrollingDirection.X,
@@ -495,213 +528,172 @@ function Peleccos:CreateWindow(o)
         ScrollBarThickness=0,
         ZIndex=52, Parent=BAR,
     })
-    layout(CAT_SF, Enum.FillDirection.Horizontal, 2, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center)
+    -- Center-aligned horizontal layout for tabs
+    local catLayout = layout(CAT_SF, Enum.FillDirection.Horizontal, 3, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center)
 
     local function repositionBar()
-        local eW = EGG_BTN.Visible and 96 or 2
+        local eW = EGG_BTN.Visible and (EGG_BTN.AbsoluteSize.X + 6) or 2
         CAT_SF.Position = dim2(0,eW+2,0,0)
-        CAT_SF.Size     = dim2(1,-(eW+74),1,0)
+        CAT_SF.Size     = dim2(1,-(eW+68),1,0)
     end
     repositionBar()
-    EGG_BTN:GetPropertyChangedSignal("Visible"):Connect(repositionBar)
+    EGG_BTN:GetPropertyChangedSignal("Visible"):Connect(function()
+        task.defer(repositionBar)
+    end)
 
     -- ══════════════════════════════════════════════════════════
-    -- WATERMARK — anchored below top bar, always on SG
+    -- WATERMARK — below bar, draggable, auto-sized
     -- ══════════════════════════════════════════════════════════
     local WM = mk("Frame",{
         Name="Watermark",
-        Size=dim2(0,600,0,18),
+        Size=dim2(0,10,0,18), AutomaticSize=Enum.AutomaticSize.X,
         Position=dim2(0,8,0,BAR_H+4),
-        BackgroundColor3=rgb(10,10,12),
-        BackgroundTransparency=0.08,
+        BackgroundColor3=rgb(8,8,10),
+        BackgroundTransparency=0.10,
         BorderSizePixel=0,
         ZIndex=30, Parent=SG,
     })
-    stroke(WM, C.br0, 1)  -- no corner = flat/square
+    stroke(WM, C.br1, 1)
 
     local wmRow = mk("Frame",{
-        Size=dim2(1,-10,1,0), Position=dim2(0,5,0,0),
+        Size=dim2(1,0,1,0), AutomaticSize=Enum.AutomaticSize.X,
+        Position=dim2(0,0,0,0),
         BackgroundTransparency=1, ZIndex=31, Parent=WM,
     })
+    padding(wmRow,0,6,0,6)
     layout(wmRow, Enum.FillDirection.Horizontal, 0, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
 
     local wmLabels = {}
     local function wmSep()
-        mk("TextLabel",{Text=" | ",Size=dim2(0,14,1,0),BackgroundTransparency=1,TextColor3=C.br1,TextSize=10,Font=Enum.Font.Gotham,ZIndex=31,Parent=wmRow})
+        mk("TextLabel",{Text=" | ",Size=dim2(0,12,1,0),BackgroundTransparency=1,TextColor3=C.br2,TextSize=10,Font=Enum.Font.Gotham,ZIndex=31,Parent=wmRow})
     end
-    local function wmLbl(key, txt, bold)
+    local function wmLbl(key, txt, bold, colored)
         local lbl = mk("TextLabel",{
             Text=tostring(txt), Size=dim2(0,0,1,0), AutomaticSize=Enum.AutomaticSize.X,
             BackgroundTransparency=1,
-            TextColor3 = (key=="script") and AC or C.t1,
+            TextColor3 = colored and AC or C.t1,
             TextSize=10,
-            Font=(bold or key=="script") and Enum.Font.GothamBold or Enum.Font.Gotham,
+            Font=(bold or colored) and Enum.Font.GothamBold or Enum.Font.Gotham,
             ZIndex=31, Parent=wmRow,
         })
-        if key=="script" then onAC(function(c) lbl.TextColor3=c end) end
+        if colored then onAC(function(c) lbl.TextColor3=c end) end
         return lbl
     end
-    wmLabels.script = wmLbl("script", CFG.ScriptName, true); wmSep()
-    wmLabels.user   = wmLbl("user",   CFG.UserName);         wmSep()
-    wmLabels.config = wmLbl("config", CFG.ConfigName);       wmSep()
-    wmLabels.fps    = wmLbl("fps",    "FPS: --");             wmSep()
-    wmLabels.ping   = wmLbl("ping",   "Ping: --ms");          wmSep()
-    wmLabels.build  = wmLbl("build",  "["..CFG.BuildType.."]"); wmSep()
-    wmLabels.game   = wmLbl("game",   CFG.GameName.." ("..CFG.GameId..")")
+    -- Watermark layout: ScriptName [colored] | ConfigName | fps | ping
+    -- UserName, GameName, GameId, BuildType are intentionally NOT shown
+    -- since they're auto-detected or dev-set only
+    wmLabels.script = wmLbl("script", CFG.ScriptName, true, true); wmSep()
+    wmLabels.config = wmLbl("config", CFG.ConfigName);             wmSep()
+    wmLabels.fps    = wmLbl("fps",    "-- fps");                   wmSep()
+    wmLabels.ping   = wmLbl("ping",   "--ms")
     draggify(WM, WM)
 
     RunService.Heartbeat:Connect(function()
         pcall(function()
-            wmLabels.fps.Text  = "FPS: "..tostring(_fps)
-            wmLabels.ping.Text = "Ping: "..tostring(_ping).."ms"
+            wmLabels.fps.Text  = tostring(_fps).." fps"
+            wmLabels.ping.Text = tostring(_ping).."ms"
         end)
     end)
 
-    local function wmSet(key, val)
-        CFG[key]=val
-        if key=="ScriptName" then wmLabels.script.Text=val
-        elseif key=="UserName"   then wmLabels.user.Text=val
-        elseif key=="ConfigName" then wmLabels.config.Text=val
-        elseif key=="BuildType"  then wmLabels.build.Text="["..val.."]"
-        elseif key=="GameName"   then wmLabels.game.Text=val.." ("..CFG.GameId..")"
-        elseif key=="GameId"     then wmLabels.game.Text=CFG.GameName.." ("..val..")"
-        end
-    end
-
     -- ══════════════════════════════════════════════════════════
     -- MAIN BACKGROUND WINDOW
-    -- Positioned below BAR (offset by BAR_H) using absolute coords
     -- ══════════════════════════════════════════════════════════
-    local BG = mk("Frame",{
-        Name="Background",
-        BackgroundColor3=CFG.BgColor,
-        BorderSizePixel=0,
-        Size=dim2(0.32558,0,0,0),   -- width = 32% of screen
-        -- height computed below after we know screen size
-        ZIndex=2, Parent=SG,
-    })
-    -- We set height and position after SG has a size
+    local BG, BG_IMG, mainDragHandle, mainOverlay = buildWindow(
+        SG,
+        dim2(0,500,0,380),
+        dim2(0,300,0,BAR_H+30),
+        2,
+        BG_IMAGE,
+        onAC
+    )
+    BG.Name = "MainWindow"
+
+    -- Resize to fit screen on first frame
     task.defer(function()
         local sv = SG.AbsoluteSize
-        local winH = math.floor(sv.Y * 0.85) - BAR_H
-        local winW = math.floor(sv.X * 0.32558)
+        local winW = math.floor(sv.X * 0.33)
+        local winH = math.floor((sv.Y - BAR_H) * 0.84)
+        winW = math.max(winW, 360)
+        winH = math.max(winH, 280)
         BG.Size     = dim2(0,winW,0,winH)
-        BG.Position = dim2(0, math.floor(sv.X*0.35349), 0, BAR_H + math.floor((sv.Y-BAR_H)*0.10))
+        BG.Position = dim2(0, math.floor(sv.X*0.35), 0, BAR_H + math.floor((sv.Y-BAR_H)*0.09))
     end)
-    stroke(BG, C.br0, 1)  -- no UICorner = fully square outer border
 
-    -- Image inside BG
-    local BG_IMG = mk("ImageLabel",{
-        Name="Image", BorderSizePixel=0,
-        BackgroundColor3=rgb(8,8,10),
-        AnchorPoint=Vector2.new(.5,.5),
-        Image=BG_IMAGE,
-        Size=dim2(1,-2,1,-2),
-        Position=dim2(.5,0,.5,0),
-        ZIndex=2, Parent=BG,
-    })
-    corner(BG_IMG, RC.sharp)
+    -- Make main window draggable ONLY via the inner area (not the outer blocky border)
+    draggify(BG, mainDragHandle)
 
-    -- dark overlay (readability)
-    local overlay = mk("Frame",{
-        Size=dim2(1,0,1,0), BackgroundColor3=rgb(0,0,0),
-        BackgroundTransparency=0.40, ZIndex=3, Parent=BG_IMG,
-    })
-    corner(overlay, RC.sharp)
-
-    -- drag handle (full image area, below content)
-    local dragHandle = mk("TextButton",{
-        Size=dim2(1,0,1,0), BackgroundTransparency=1,
-        Text="", AutoButtonColor=false, ZIndex=3, Parent=BG_IMG,
-    })
-    draggify(BG, dragHandle)
-
-    -- content scroll
+    -- Content scroll (inside main window image)
     local CONTENT = mk("ScrollingFrame",{
         Size=dim2(1,-8,1,-8), Position=dim2(0,4,0,4),
         BackgroundTransparency=1,
         ScrollBarThickness=2, ScrollBarImageColor3=AC,
         CanvasSize=dim2(0,0,0,0),
-        ZIndex=5, Parent=BG_IMG,
+        ZIndex=6, Parent=BG_IMG,
     })
     onAC(function(c) CONTENT.ScrollBarImageColor3=c end)
-    local contentLL = layout(CONTENT, Enum.FillDirection.Vertical, 7)
+    local contentLL = layout(CONTENT, Enum.FillDirection.Vertical, 6)
     padding(CONTENT, 6,4,6,4)
     contentLL:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         task.defer(function()
             if CONTENT and CONTENT.Parent then
-                CONTENT.CanvasSize = dim2(0,0,0, contentLL.AbsoluteContentSize.Y+18)
+                CONTENT.CanvasSize = dim2(0,0,0, contentLL.AbsoluteContentSize.Y+20)
             end
         end)
     end)
 
     -- ══════════════════════════════════════════════════════════
-    -- SETTINGS WINDOW  — same visual DNA as main window
+    -- SETTINGS WINDOW  — exact same visual style as main window
     -- ══════════════════════════════════════════════════════════
-    local SW = mk("Frame",{
-        Name="SettingsWin",
-        BackgroundColor3=CFG.BgColor,
-        BorderSizePixel=0,
-        Size=dim2(0,310,0,480),
-        Position=dim2(.5,-155,.5,-240),
-        ZIndex=100, Visible=false, Parent=SG,
-    })
-    stroke(SW, C.br0, 1)  -- square, matching BG
+    local SW, SW_IMG, swDragHandle, swOverlay = buildWindow(
+        SG,
+        dim2(0,296,0,380),
+        dim2(.5,-148,.5,-190),
+        100,
+        BG_IMAGE,
+        onAC
+    )
+    SW.Name = "SettingsWin"
+    SW.Visible = false
 
-    local SW_IMG = mk("ImageLabel",{
-        BorderSizePixel=0,
-        BackgroundColor3=rgb(8,8,10),
-        AnchorPoint=Vector2.new(.5,.5),
-        Image=BG_IMAGE,
-        Size=dim2(1,-2,1,-2),
-        Position=dim2(.5,0,.5,0),
-        ZIndex=101, Parent=SW,
-    })
-    corner(SW_IMG, RC.sharp)
-    local sw_ov2 = mk("Frame",{
-        Size=dim2(1,0,1,0), BackgroundColor3=rgb(0,0,0),
-        BackgroundTransparency=0.40, ZIndex=102, Parent=SW_IMG,
-    })
-    corner(sw_ov2, RC.sharp)
-
-    -- Settings title bar (drag handle)
+    -- Settings title bar (sits above content, inside image)
     local SW_HDR = mk("Frame",{
-        Size=dim2(1,0,0,28),
-        BackgroundColor3=rgb(0,0,0), BackgroundTransparency=0.45,
-        ZIndex=103, Parent=SW_IMG,
+        Size=dim2(1,0,0,26),
+        BackgroundColor3=rgb(0,0,0), BackgroundTransparency=0.40,
+        ZIndex=104, Parent=SW_IMG,
     })
-    local sw_accent = mk("Frame",{
+    -- Accent line under settings header
+    local swAccentLine = mk("Frame",{
         Size=dim2(1,0,0,1), AnchorPoint=Vector2.new(0,1),
         Position=dim2(0,0,1,0),
-        BackgroundColor3=AC, ZIndex=104, Parent=SW_HDR,
+        BackgroundColor3=AC, ZIndex=105, Parent=SW_HDR,
     })
-    onAC(function(c) sw_accent.BackgroundColor3=c end)
+    onAC(function(c) swAccentLine.BackgroundColor3=c end)
     mk("TextLabel",{
-        Text="Settings",
-        Size=dim2(1,-36,1,0), Position=dim2(0,10,0,0),
+        Text="⚙ Settings",
+        Size=dim2(1,-34,1,0), Position=dim2(0,10,0,0),
         BackgroundTransparency=1, TextColor3=C.t0,
-        TextSize=12, Font=Enum.Font.GothamBold,
+        TextSize=11, Font=Enum.Font.GothamBold,
         TextXAlignment=Enum.TextXAlignment.Left,
-        ZIndex=104, Parent=SW_HDR,
+        ZIndex=105, Parent=SW_HDR,
     })
     local SW_X = mk("TextButton",{
-        Text="X",
-        Size=dim2(0,22,0,20), Position=dim2(1,-24,0,4),
-        BackgroundColor3=rgb(48,18,18), TextColor3=C.t0,
+        Text="✕",
+        Size=dim2(0,20,0,18), Position=dim2(1,-23,0,4),
+        BackgroundColor3=rgb(48,16,16), TextColor3=rgb(220,80,80),
         TextSize=10, Font=Enum.Font.GothamBold,
-        AutoButtonColor=false, ZIndex=105, Parent=SW_HDR,
+        AutoButtonColor=false, ZIndex=106, Parent=SW_HDR,
     })
     corner(SW_X, RC.sharp)
     SW_X.MouseButton1Click:Connect(function() SW.Visible=false end)
-    draggify(SW, SW_HDR)
+    draggify(SW, swDragHandle)
 
     -- Settings scroll
     local SW_SF = mk("ScrollingFrame",{
-        Size=dim2(1,-6,1,-30), Position=dim2(0,3,0,28),
+        Size=dim2(1,-6,1,-28), Position=dim2(0,3,0,27),
         BackgroundTransparency=1,
         ScrollBarThickness=2, ScrollBarImageColor3=AC,
         CanvasSize=dim2(0,0,0,0),
-        ZIndex=103, Parent=SW_IMG,
+        ZIndex=104, Parent=SW_IMG,
     })
     onAC(function(c) SW_SF.ScrollBarImageColor3=c end)
     local swLL = layout(SW_SF, Enum.FillDirection.Vertical, 5)
@@ -712,20 +704,20 @@ function Peleccos:CreateWindow(o)
         end)
     end)
 
-    -- ── Settings widget builders ──────────────────────────────
+    -- ── Settings widget helpers ───────────────────────────────
     local function swSection(title)
         local f = mk("Frame",{
-            Size=dim2(1,0,0,16), BackgroundColor3=rgb(0,0,0),
-            BackgroundTransparency=0.55, ZIndex=104, Parent=SW_SF,
+            Size=dim2(1,0,0,15), BackgroundColor3=rgb(0,0,0),
+            BackgroundTransparency=0.52, ZIndex=105, Parent=SW_SF,
         })
-        padding(f,0,0,0,4)
+        padding(f,0,0,0,5)
         local lbl = mk("TextLabel",{
             Text=title:upper(),
-            Size=dim2(1,-4,1,0),
+            Size=dim2(1,-5,1,0),
             BackgroundTransparency=1, TextColor3=AC,
             TextSize=9, Font=Enum.Font.GothamBold,
             TextXAlignment=Enum.TextXAlignment.Left,
-            ZIndex=105, Parent=f,
+            ZIndex=106, Parent=f,
         })
         onAC(function(c) lbl.TextColor3=c end)
     end
@@ -733,25 +725,25 @@ function Peleccos:CreateWindow(o)
     local function swRow(h)
         local r=mk("Frame",{
             Size=dim2(1,0,0,h or 24),
-            BackgroundColor3=C.bg3, BackgroundTransparency=0.45,
-            ZIndex=104, Parent=SW_SF,
+            BackgroundColor3=C.bg3, BackgroundTransparency=0.38,
+            ZIndex=105, Parent=SW_SF,
         })
-        corner(r, RC.sharp)
+        corner(r, RC.soft)
         return r
     end
 
     local function swTextbox(lbl_text, defVal, onChange)
-        local wrap=mk("Frame",{Size=dim2(1,0,0,38),BackgroundTransparency=1,ZIndex=104,Parent=SW_SF})
-        mk("TextLabel",{Text=lbl_text,Size=dim2(1,0,0,13),BackgroundTransparency=1,TextColor3=C.t2,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=105,Parent=wrap})
-        local ifrm=mk("Frame",{Size=dim2(1,0,0,22),Position=dim2(0,0,0,15),BackgroundColor3=C.bg3,ZIndex=105,Parent=wrap})
-        corner(ifrm,RC.sharp); stroke(ifrm,C.br0,1)
+        local wrap=mk("Frame",{Size=dim2(1,0,0,38),BackgroundTransparency=1,ZIndex=105,Parent=SW_SF})
+        mk("TextLabel",{Text=lbl_text,Size=dim2(1,0,0,13),BackgroundTransparency=1,TextColor3=C.t2,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=106,Parent=wrap})
+        local ifrm=mk("Frame",{Size=dim2(1,0,0,22),Position=dim2(0,0,0,15),BackgroundColor3=C.bg3,ZIndex=106,Parent=wrap})
+        corner(ifrm,RC.soft); stroke(ifrm,C.br1,1)
         local tb=mk("TextBox",{
             PlaceholderText="...", Text=tostring(defVal),
             Size=dim2(1,-8,1,0), Position=dim2(0,5,0,0),
             BackgroundTransparency=1, TextColor3=C.t0,
             PlaceholderColor3=C.t2, TextSize=11,
             Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left,
-            ClearTextOnFocus=false, ZIndex=106, Parent=ifrm,
+            ClearTextOnFocus=false, ZIndex=107, Parent=ifrm,
         })
         tb.FocusLost:Connect(function() if onChange then onChange(tb.Text) end end)
         return tb
@@ -763,36 +755,33 @@ function Peleccos:CreateWindow(o)
             Text=txt, Size=dim2(1,0,1,0),
             BackgroundTransparency=1, TextColor3=C.t1,
             TextSize=11, Font=Enum.Font.GothamSemibold,
-            ZIndex=105, Parent=r,
+            ZIndex=106, Parent=r,
         })
         local hb = mk("TextButton",{
             Text="", Size=dim2(1,0,1,0),
             BackgroundTransparency=1, AutoButtonColor=false,
-            ZIndex=106, Parent=r,
+            ZIndex=107, Parent=r,
         })
-        hb.MouseEnter:Connect(function() tw(r,{BackgroundTransparency=0.2},Enum.EasingStyle.Quint,0.1); tw(lbl,{TextColor3=C.t0},Enum.EasingStyle.Quint,0.1) end)
-        hb.MouseLeave:Connect(function() tw(r,{BackgroundTransparency=0.45},Enum.EasingStyle.Quint,0.1); tw(lbl,{TextColor3=C.t1},Enum.EasingStyle.Quint,0.1) end)
+        hb.MouseEnter:Connect(function() tw(r,{BackgroundTransparency=0.15},Enum.EasingStyle.Quint,0.1); tw(lbl,{TextColor3=C.t0},Enum.EasingStyle.Quint,0.1) end)
+        hb.MouseLeave:Connect(function() tw(r,{BackgroundTransparency=0.38},Enum.EasingStyle.Quint,0.1); tw(lbl,{TextColor3=C.t1},Enum.EasingStyle.Quint,0.1) end)
         hb.MouseButton1Click:Connect(function()
             tw(lbl,{TextColor3=AC},Enum.EasingStyle.Quint,0.08)
             task.delay(0.15,function() tw(lbl,{TextColor3=C.t1},Enum.EasingStyle.Quint,0.12) end)
             if cb then cb() end
-        end)
-        onAC(function(c)
-            -- flash color on click already uses AC, no persistent bind needed
         end)
         return r
     end
 
     local function swToggle(lbl_text, default, onChange)
         local r = swRow(24)
-        mk("TextLabel",{Text=lbl_text,Size=dim2(1,-46,1,0),Position=dim2(0,6,0,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=105,Parent=r})
+        mk("TextLabel",{Text=lbl_text,Size=dim2(1,-46,1,0),Position=dim2(0,6,0,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=106,Parent=r})
         local val=default==true
-        local track=mk("Frame",{Size=dim2(0,30,0,13),Position=dim2(1,-34,.5,-6.5),BackgroundColor3=val and AC or C.bg4,ZIndex=105,Parent=r})
+        local track=mk("Frame",{Size=dim2(0,30,0,13),Position=dim2(1,-34,.5,-6.5),BackgroundColor3=val and AC or C.bg4,ZIndex=106,Parent=r})
         corner(track,RC.pill)
-        local knob=mk("Frame",{Size=dim2(0,10,0,10),Position=val and dim2(1,-12,.5,-5) or dim2(0,2,.5,-5),BackgroundColor3=C.t0,ZIndex=106,Parent=track})
+        local knob=mk("Frame",{Size=dim2(0,10,0,10),Position=val and dim2(1,-12,.5,-5) or dim2(0,2,.5,-5),BackgroundColor3=C.t0,ZIndex=107,Parent=track})
         corner(knob,RC.pill)
         onAC(function(c) if val then track.BackgroundColor3=c end end)
-        local tbtn=mk("TextButton",{Size=dim2(1,0,1,0),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=107,Parent=r})
+        local tbtn=mk("TextButton",{Size=dim2(1,0,1,0),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=108,Parent=r})
         tbtn.MouseButton1Click:Connect(function()
             val=not val
             tw(track,{BackgroundColor3=val and AC or C.bg4},Enum.EasingStyle.Quint,0.18)
@@ -804,10 +793,10 @@ function Peleccos:CreateWindow(o)
 
     local function swColorRow(lbl_text, defCol, onChange)
         local r = swRow(24)
-        mk("TextLabel",{Text=lbl_text,Size=dim2(1,-42,1,0),Position=dim2(0,6,0,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=105,Parent=r})
+        mk("TextLabel",{Text=lbl_text,Size=dim2(1,-42,1,0),Position=dim2(0,6,0,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=106,Parent=r})
         local col=defCol; local h,s,v=Color3.toHSV(col)
-        local sw2=mk("TextButton",{Size=dim2(0,30,0,16),Position=dim2(1,-34,.5,-8),BackgroundColor3=col,Text="",AutoButtonColor=false,ZIndex=105,Parent=r})
-        corner(sw2,RC.sharp); stroke(sw2,C.br2,1)
+        local sw2=mk("TextButton",{Size=dim2(0,30,0,16),Position=dim2(1,-34,.5,-8),BackgroundColor3=col,Text="",AutoButtonColor=false,ZIndex=106,Parent=r})
+        corner(sw2,RC.soft); stroke(sw2,C.br2,1)
         local openPick=false
         sw2.MouseButton1Click:Connect(function()
             openPick=not openPick
@@ -823,33 +812,36 @@ function Peleccos:CreateWindow(o)
         return {Get=function() return col end}
     end
 
-    -- ── Populate Settings ────────────────────────────────────
+    -- ── Populate Settings (only runtime-relevant items) ───────
     swSection("Appearance")
     swColorRow("Accent Color", AC, function(c)
         AC=c; fireAC()
     end)
-    swColorRow("Background Color", CFG.BgColor, function(c)
-        CFG.BgColor=c; BG.BackgroundColor3=c; SW.BackgroundColor3=c
+    swColorRow("Background Tint", C.bg0, function(c)
+        BG.BackgroundColor3=c; SW.BackgroundColor3=c
     end)
+
     swSection("Watermark")
     swToggle("Show Watermark", true, function(v) CFG.ShowWM=v; WM.Visible=v end)
-    swTextbox("Script Name",  CFG.ScriptName, function(v) wmSet("ScriptName",v) end)
-    swTextbox("Display Name", CFG.UserName,   function(v) wmSet("UserName",v) end)
-    swTextbox("Config Name",  CFG.ConfigName, function(v) wmSet("ConfigName",v) end)
-    swTextbox("Build Type",   CFG.BuildType,  function(v) wmSet("BuildType",v) end)
-    swTextbox("Game Name",    CFG.GameName,   function(v) wmSet("GameName",v) end)
+    -- Only ConfigName is editable at runtime (as requested)
+    swTextbox("Config Name", CFG.ConfigName, function(v)
+        CFG.ConfigName=v
+        wmLabels.config.Text=v
+    end)
+
     swSection("Copy")
     swButton("Copy Username",    function() pcall(function() setclipboard(LP.Name) end);            notify({Title="Copied",Desc="Username copied.",Type="Success",Duration=2}) end)
     swButton("Copy User ID",     function() pcall(function() setclipboard(tostring(LP.UserId)) end); notify({Title="Copied",Desc="User ID copied.",Type="Success",Duration=2}) end)
     swButton("Copy Game ID",     function() pcall(function() setclipboard(tostring(game.GameId)) end); notify({Title="Copied",Desc="Game ID copied.",Type="Success",Duration=2}) end)
     swButton("Copy Config Name", function() pcall(function() setclipboard(CFG.ConfigName) end);      notify({Title="Copied",Desc="Config name copied.",Type="Success",Duration=2}) end)
+
     swSection("Danger Zone")
     local unloadRow = swRow(26)
-    local unloadLbl = mk("TextLabel",{Text="Unload Script",Size=dim2(1,0,1,0),BackgroundTransparency=1,TextColor3=rgb(220,60,60),TextSize=12,Font=Enum.Font.GothamBold,ZIndex=105,Parent=unloadRow})
-    unloadRow.BackgroundColor3=rgb(40,14,14); unloadRow.BackgroundTransparency=0.3
-    local unloadBtn=mk("TextButton",{Size=dim2(1,0,1,0),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=106,Parent=unloadRow})
-    unloadBtn.MouseEnter:Connect(function() tw(unloadRow,{BackgroundTransparency=0.1},Enum.EasingStyle.Quint,0.1) end)
-    unloadBtn.MouseLeave:Connect(function() tw(unloadRow,{BackgroundTransparency=0.3},Enum.EasingStyle.Quint,0.1) end)
+    unloadRow.BackgroundColor3=rgb(36,12,12); unloadRow.BackgroundTransparency=0.28
+    local unloadLbl = mk("TextLabel",{Text="Unload Script",Size=dim2(1,0,1,0),BackgroundTransparency=1,TextColor3=rgb(215,55,55),TextSize=12,Font=Enum.Font.GothamBold,ZIndex=106,Parent=unloadRow})
+    local unloadBtn=mk("TextButton",{Size=dim2(1,0,1,0),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=107,Parent=unloadRow})
+    unloadBtn.MouseEnter:Connect(function() tw(unloadRow,{BackgroundTransparency=0.08},Enum.EasingStyle.Quint,0.1) end)
+    unloadBtn.MouseLeave:Connect(function() tw(unloadRow,{BackgroundTransparency=0.28},Enum.EasingStyle.Quint,0.1) end)
     unloadBtn.MouseButton1Click:Connect(function()
         notify({Title="Unloading",Desc="Removing script...",Type="Warning",Duration=2})
         task.delay(.5,function() pcall(function() SG:Destroy() end) end)
@@ -858,7 +850,7 @@ function Peleccos:CreateWindow(o)
     SET_BTN.MouseButton1Click:Connect(function() SW.Visible=not SW.Visible end)
 
     -- ══════════════════════════════════════════════════════════
-    -- EASTER EGG
+    -- EASTER EGG — uses loadImage() from muglios server
     -- ══════════════════════════════════════════════════════════
     local _eggActive=false
     task.spawn(function()
@@ -876,10 +868,10 @@ function Peleccos:CreateWindow(o)
                     for _,c2 in ipairs(inst:GetChildren()) do scan(c2,d+1) end
                 end
                 pcall(function() scan(LP.PlayerGui,0) end)
-                pcall(function() scan(workspace,0) end)
                 if found and not EGG_BTN.Visible then
-                    EGG_BTN.Visible=true; repositionBar()
-                    notify({Title="Easter Egg",Desc="Something was found.",Type="Warning",Duration=5})
+                    EGG_BTN.Visible=true
+                    task.defer(repositionBar)
+                    notify({Title="🥚 Easter Egg",Desc="Something secret was found.",Type="Warning",Duration=5})
                 end
             end)
         end
@@ -887,54 +879,130 @@ function Peleccos:CreateWindow(o)
 
     EGG_BTN.MouseButton1Click:Connect(function()
         if _eggActive then return end; _eggActive=true
-        local vid=EASTER_VIDS[math.random(1,#EASTER_VIDS)]
-        local ov3=mk("Frame",{Size=dim2(1,0,1,0),BackgroundColor3=rgb(0,0,0),BackgroundTransparency=0,ZIndex=500,Parent=SG})
-        local panel=mk("Frame",{
-            Size=dim2(0,320,0,160),
-            Position=dim2(.5,-160,.5,-80),
-            BackgroundColor3=C.bg1, ZIndex=501, Parent=ov3,
-        })
-        corner(panel,RC.sharp); stroke(panel,C.br0,1)
-        local pHdr=mk("Frame",{Size=dim2(1,0,0,24),BackgroundColor3=rgb(0,0,0),BackgroundTransparency=0.5,ZIndex=502,Parent=panel})
-        mk("TextLabel",{Text="EASTER EGG",Size=dim2(1,0,1,0),BackgroundTransparency=1,TextColor3=AC,TextSize=12,Font=Enum.Font.GothamBold,ZIndex=503,Parent=pHdr})
-        onAC(function(c) pHdr:FindFirstChildWhichIsA("TextLabel")  (pHdr:FindFirstChildWhichIsA("TextLabel").TextColor3==c) end)
-        mk("TextLabel",{
-            Text="youtu.be/"..vid.id.."\n\n"..(vid.loop and "[Looping]" or "").."\n\nSaved to: ".._DIR.."/videos/",
-            Size=dim2(1,-20,0,88), Position=dim2(0,10,0,30),
-            BackgroundTransparency=1, TextColor3=C.t1,
-            TextSize=11, Font=Enum.Font.Gotham,
-            TextWrapped=true, TextXAlignment=Enum.TextXAlignment.Left,
-            ZIndex=502, Parent=panel,
-        })
-        pcall(function()
-            local fn=_DIR.."/videos/"..vid.id..".txt"
-            if not isfile(fn) then writefile(fn,"https://www.youtube.com/watch?v="..vid.id) end
+
+        -- pick random image path and load it
+        local imgPath = EASTER_IMGS[math.random(1,#EASTER_IMGS)]
+        local loadedAsset = ""
+        task.spawn(function()
+            loadedAsset = loadImage(imgPath)
         end)
-        local closeE=mk("TextButton",{
-            Text="Close",
-            Size=dim2(0,70,0,22), Position=dim2(.5,-35,1,-28),
-            BackgroundColor3=C.bg4, TextColor3=C.t0,
-            TextSize=11, Font=Enum.Font.GothamSemibold,
-            AutoButtonColor=false, ZIndex=503, Parent=panel,
+
+        -- Overlay backdrop
+        local ov3=mk("Frame",{
+            Size=dim2(1,0,1,0), BackgroundColor3=rgb(0,0,0),
+            BackgroundTransparency=0.45, ZIndex=500, Parent=SG,
         })
-        corner(closeE,RC.sharp)
-        closeE.MouseButton1Click:Connect(function()
+
+        -- Easter egg panel — same style as main window (blocky outer, soft inner)
+        local eggOuter = mk("Frame",{
+            Size=dim2(0,300,0,220),
+            Position=dim2(.5,-150,.5,-110),
+            BackgroundColor3=rgb(8,8,10),
+            ZIndex=501, Parent=ov3,
+        })
+        stroke(eggOuter, AC, 2)
+        local eggImg = mk("ImageLabel",{
+            BackgroundColor3=rgb(6,6,8),
+            AnchorPoint=Vector2.new(.5,.5),
+            Image=BG_IMAGE,
+            Size=dim2(1,-4,1,-4),
+            Position=dim2(.5,0,.5,0),
+            ZIndex=502, Parent=eggOuter,
+        })
+        corner(eggImg, RC.soft)
+        mk("Frame",{
+            Size=dim2(1,0,1,0), BackgroundColor3=rgb(0,0,0),
+            BackgroundTransparency=0.35, ZIndex=503, Parent=eggImg,
+        }).Parent=eggImg; pcall(function() corner(eggImg:FindFirstChildOfClass("Frame"), RC.soft) end)
+        onAC(function(c) pcall(function() stroke(eggOuter, c, 2) end) end)
+
+        -- Egg header
+        local eHdr = mk("Frame",{
+            Size=dim2(1,0,0,26), BackgroundColor3=rgb(0,0,0),
+            BackgroundTransparency=0.40, ZIndex=504, Parent=eggImg,
+        })
+        local eAccent = mk("Frame",{
+            Size=dim2(1,0,0,1), AnchorPoint=Vector2.new(0,1),
+            Position=dim2(0,0,1,0), BackgroundColor3=AC, ZIndex=505, Parent=eHdr,
+        })
+        onAC(function(c) eAccent.BackgroundColor3=c end)
+        mk("TextLabel",{
+            Text="🥚  EASTER EGG",
+            Size=dim2(1,-30,1,0), Position=dim2(0,10,0,0),
+            BackgroundTransparency=1, TextColor3=AC,
+            TextSize=12, Font=Enum.Font.GothamBold,
+            TextXAlignment=Enum.TextXAlignment.Left,
+            ZIndex=505, Parent=eHdr,
+        })
+        local eClose = mk("TextButton",{
+            Text="✕", Size=dim2(0,20,0,18), Position=dim2(1,-23,0,4),
+            BackgroundColor3=rgb(48,16,16), TextColor3=rgb(220,80,80),
+            TextSize=10, Font=Enum.Font.GothamBold,
+            AutoButtonColor=false, ZIndex=506, Parent=eHdr,
+        })
+        corner(eClose, RC.sharp)
+
+        -- Egg image display (loaded from server)
+        local eImgDisplay = mk("ImageLabel",{
+            Size=dim2(1,-16,0,128), Position=dim2(0,8,0,34),
+            BackgroundColor3=C.bg4, BackgroundTransparency=0.5,
+            Image="",
+            ZIndex=504, Parent=eggImg,
+        })
+        corner(eImgDisplay, RC.soft); stroke(eImgDisplay, C.br1, 1)
+        mk("TextLabel",{
+            Text="Loading...", Size=dim2(1,0,1,0),
+            BackgroundTransparency=1, TextColor3=C.t2,
+            TextSize=11, Font=Enum.Font.Gotham,
+            ZIndex=505, Parent=eImgDisplay,
+        })
+
+        -- poll until image loads
+        task.spawn(function()
+            for i=1,20 do
+                task.wait(0.3)
+                if loadedAsset ~= "" then
+                    eImgDisplay.Image = loadedAsset
+                    local loadLbl = eImgDisplay:FindFirstChildOfClass("TextLabel")
+                    if loadLbl then loadLbl.Visible=false end
+                    break
+                end
+            end
+        end)
+
+        -- Caption
+        mk("TextLabel",{
+            Text="Saved to: ".._DIR.."/eggs/",
+            Size=dim2(1,-16,0,20), Position=dim2(0,8,0,168),
+            BackgroundTransparency=1, TextColor3=C.t2,
+            TextSize=10, Font=Enum.Font.Gotham,
+            TextXAlignment=Enum.TextXAlignment.Left,
+            ZIndex=504, Parent=eggImg,
+        })
+
+        local function closeEgg()
             tw(ov3,{BackgroundTransparency=1},Enum.EasingStyle.Quint,0.2)
             task.wait(.22); pcall(function() ov3:Destroy() end); _eggActive=false
-        end)
+        end
+        eClose.MouseButton1Click:Connect(closeEgg)
+        ov3.MouseButton1Click = nil
+        -- click backdrop to close too
+        local bdClose = mk("TextButton",{
+            Size=dim2(1,0,1,0), BackgroundTransparency=1,
+            Text="", AutoButtonColor=false, ZIndex=500, Parent=ov3,
+        })
+        bdClose.MouseButton1Click:Connect(closeEgg)
     end)
 
     -- ══════════════════════════════════════════════════════════
-    -- KEY TOGGLE  (Insert hides BG + BAR, NOT watermark)
+    -- KEY TOGGLE
     -- ══════════════════════════════════════════════════════════
     local _vis=true
     UIS.InputBegan:Connect(function(i,gpe)
         if not gpe and i.KeyCode==KEY then
             _vis=not _vis
-            BG.Visible=_vis
-            BAR.Visible=_vis
+            BG.Visible=_vis; BAR.Visible=_vis
             if not _vis then SW.Visible=false end
-            -- WM is controlled only by Settings toggle
         end
     end)
 
@@ -946,28 +1014,31 @@ function Peleccos:CreateWindow(o)
     function WO:AddCategory(name)
         local isFirst = #self._categories==0
 
-        -- bar tab button
+        -- Tab button: AutomaticSize so it shrinks to text, minimum width enforced
         local catBtn = mk("TextButton",{
             Text=name,
-            Size=dim2(0,0,0,BAR_H-6), AutomaticSize=Enum.AutomaticSize.X,
-            Position=dim2(0,0,0,3),
+            -- AutomaticSize handles expanding; MinimumSize not available so we use padding
+            Size=dim2(0,0,0,BAR_H-5),
+            AutomaticSize=Enum.AutomaticSize.X,
+            Position=dim2(0,0,0,2),
             BackgroundColor3 = isFirst and AC or C.bg4,
             TextColor3       = isFirst and C.t0 or C.t2,
-            TextSize=11, Font=Enum.Font.GothamSemibold,
+            TextSize=10, Font=Enum.Font.GothamSemibold,
             AutoButtonColor=false, BorderSizePixel=0,
             ZIndex=53, LayoutOrder=#self._categories+1,
             Parent=CAT_SF,
         })
-        padding(catBtn,0,8,0,8)
+        -- Padding gives the button a minimum feel while auto-expanding to text
+        padding(catBtn, 0,10,0,10)
         corner(catBtn, RC.sharp)
         stroke(catBtn, C.br0, 1)
         onAC(function(c) if self._activeCat==CAT then catBtn.BackgroundColor3=c end end)
 
-        -- content panel
+        -- Content panel
         local catPanel = mk("Frame",{
             Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
             BackgroundTransparency=1,
-            Visible=isFirst, ZIndex=5, Parent=CONTENT,
+            Visible=isFirst, ZIndex=6, Parent=CONTENT,
         })
         layout(catPanel, Enum.FillDirection.Vertical, 5)
 
@@ -995,25 +1066,25 @@ function Peleccos:CreateWindow(o)
         end)
 
         -- ── Element row builder ──────────────────────────────
-        -- Outer shell: RC.sharp (3px) so it's blocky
-        -- Inner label/btn face: RC.soft (5px) slightly rounder
+        -- Outer shell: RC.sharp (blocky) with visible stroke
+        -- Inner faces: RC.soft (slightly rounder)
         local function mkRow(h)
             local r=mk("Frame",{
                 Size=dim2(1,0,0,h or 30),
-                BackgroundColor3=C.bg3,
-                BackgroundTransparency=0.50,
+                BackgroundColor3=C.bg2,
+                BackgroundTransparency=0.42,
                 ZIndex=6, Parent=catPanel,
             })
             corner(r, RC.sharp)
+            stroke(r, C.br0, 1)
             return r
         end
 
-        -- shared right-click mode info for keybind pills
         local KEYS_SHORT = {
-            [Enum.KeyCode.LeftShift]="LS",[Enum.KeyCode.RightShift]="RS",
-            [Enum.KeyCode.LeftControl]="LC",[Enum.KeyCode.RightControl]="RC",
+            [Enum.KeyCode.LeftShift]="LSH",[Enum.KeyCode.RightShift]="RSH",
+            [Enum.KeyCode.LeftControl]="LCT",[Enum.KeyCode.RightControl]="RCT",
             [Enum.KeyCode.Insert]="INS",[Enum.KeyCode.Backspace]="BS",
-            [Enum.KeyCode.Return]="Ent",[Enum.KeyCode.CapsLock]="CAPS",
+            [Enum.KeyCode.Return]="ENT",[Enum.KeyCode.CapsLock]="CAP",
             [Enum.KeyCode.Escape]="ESC",[Enum.KeyCode.Space]="SPC",
         }
         local function keyName(k)
@@ -1028,14 +1099,14 @@ function Peleccos:CreateWindow(o)
             o5=o5 or {}; local nm=o5.Name or "Button"; local cb=o5.Callback or function() end
             local row=mkRow(30)
 
-            -- inner button face has RC.soft = slightly rounded inside blocky shell
+            -- Inner face: softer corner inside blocky shell
             local face=mk("Frame",{
-                Size=dim2(1,-6,0,24), Position=dim2(0,3,0,3),
+                Size=dim2(1,-8,0,22), Position=dim2(0,4,0,4),
                 BackgroundColor3=C.bg4,
                 ZIndex=7, Parent=row,
             })
             corner(face, RC.soft)
-            stroke(face, C.br0, 1)
+            stroke(face, C.br1, 1)
 
             local lbl=mk("TextLabel",{
                 Text=nm, Size=dim2(1,0,1,0),
@@ -1044,13 +1115,13 @@ function Peleccos:CreateWindow(o)
                 ZIndex=8, Parent=face,
             })
 
-            -- left accent pip (hidden by default, shows on hover)
             local pip=mk("Frame",{
                 Size=dim2(0,2,0,14), Position=dim2(0,0,.5,-7),
                 BackgroundColor3=AC, BackgroundTransparency=1,
                 ZIndex=8, Parent=face,
             })
             onAC(function(c) pip.BackgroundColor3=c end)
+            corner(pip, RC.pill)
 
             local hbtn=mk("TextButton",{
                 Size=dim2(1,0,1,0), BackgroundTransparency=1,
@@ -1067,9 +1138,9 @@ function Peleccos:CreateWindow(o)
                 tw(pip,{BackgroundTransparency=1},Enum.EasingStyle.Quint,0.12)
             end)
             hbtn.MouseButton1Click:Connect(function()
-                tw(face,{BackgroundColor3=AC},Enum.EasingStyle.Quint,0.08)
-                tw(lbl,{TextColor3=C.t0},Enum.EasingStyle.Quint,0.08)
-                task.delay(0.2,function()
+                tw(face,{BackgroundColor3=AC},Enum.EasingStyle.Quint,0.07)
+                tw(lbl,{TextColor3=C.bg0},Enum.EasingStyle.Quint,0.07)
+                task.delay(0.18,function()
                     tw(face,{BackgroundColor3=C.bg4},Enum.EasingStyle.Quint,0.18)
                     tw(lbl,{TextColor3=C.t1},Enum.EasingStyle.Quint,0.18)
                 end)
@@ -1086,18 +1157,19 @@ function Peleccos:CreateWindow(o)
             local lbl=mk("TextLabel",{
                 Text=o5.Text or "",
                 Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
-                BackgroundColor3=C.bg3, BackgroundTransparency=0.55,
+                BackgroundColor3=C.bg2, BackgroundTransparency=0.42,
                 TextColor3=o5.Color or C.t2,
                 TextSize=o5.Size or 11, Font=Enum.Font.Gotham,
                 TextXAlignment=Enum.TextXAlignment.Left,
                 TextWrapped=true, ZIndex=6, Parent=catPanel,
             })
-            corner(lbl, RC.sharp); padding(lbl,4,8,4,8)
+            corner(lbl, RC.sharp); stroke(lbl, C.br0, 1)
+            padding(lbl,4,8,4,8)
             local r={}; function r:Set(t) lbl.Text=t end; function r:Get() return lbl.Text end; return r
         end
 
         -- ────────────────────────────────────────────────────
-        -- AddToggle  (Milenium-style: checkbox or pill)
+        -- AddToggle
         -- ────────────────────────────────────────────────────
         function CAT:AddToggle(o5)
             o5=o5 or {}
@@ -1109,10 +1181,9 @@ function Peleccos:CreateWindow(o)
 
             local row=mkRow(hasKB and 32 or 30)
 
-            -- name
             local nameLbl=mk("TextLabel",{
                 Text=nm,
-                Size=dim2(1,-(hasKB and 148 or 56),1,0),
+                Size=dim2(1,-(hasKB and 150 or 58),1,0),
                 Position=dim2(0,8,0,0),
                 BackgroundTransparency=1, TextColor3=C.t1,
                 TextSize=12, Font=Enum.Font.Gotham,
@@ -1120,18 +1191,17 @@ function Peleccos:CreateWindow(o)
                 ZIndex=7, Parent=row,
             })
 
-            -- toggle pill
             local track=mk("Frame",{
-                Size=dim2(0,32,0,15),
-                Position=dim2(1,-36,.5,-7.5),
+                Size=dim2(0,34,0,16),
+                Position=dim2(1,-38,.5,-8),
                 BackgroundColor3=val and AC or C.bg4,
                 ZIndex=7, Parent=row,
             })
             corner(track, RC.pill)
-            stroke(track, C.br0, 1)
+            stroke(track, C.br1, 1)
             local knob=mk("Frame",{
-                Size=dim2(0,11,0,11),
-                Position=val and dim2(1,-13,.5,-5.5) or dim2(0,2,.5,-5.5),
+                Size=dim2(0,12,0,12),
+                Position=val and dim2(1,-14,.5,-6) or dim2(0,2,.5,-6),
                 BackgroundColor3=C.t0,
                 ZIndex=8, Parent=track,
             })
@@ -1139,17 +1209,16 @@ function Peleccos:CreateWindow(o)
             onAC(function(c) if val then track.BackgroundColor3=c end end)
 
             local trackHit=mk("TextButton",{
-                Size=dim2(0,32,0,15), Position=dim2(1,-36,.5,-7.5),
+                Size=dim2(0,34,0,16), Position=dim2(1,-38,.5,-8),
                 BackgroundTransparency=1, Text="", AutoButtonColor=false,
                 ZIndex=9, Parent=row,
             })
 
-            -- keybind widgets
             local kbBtn, modeBtn
             if hasKB then
                 modeBtn=mk("TextButton",{
-                    Text="T", Size=dim2(0,14,0,14),
-                    Position=dim2(1,-142,.5,-7),
+                    Text="T", Size=dim2(0,16,0,15),
+                    Position=dim2(1,-148,.5,-7.5),
                     BackgroundColor3=C.bg4, TextColor3=C.t2,
                     TextSize=8, Font=Enum.Font.GothamBold,
                     AutoButtonColor=false, ZIndex=7, Parent=row,
@@ -1162,13 +1231,11 @@ function Peleccos:CreateWindow(o)
                     for i,m in ipairs(modeOrder) do if m==kbMode then ci=i break end end
                     kbMode=modeOrder[(ci%#modeOrder)+1]
                     modeBtn.Text=modeAbbr[kbMode]
-                    notify({Title="Mode",Desc=nm..": "..kbMode,Type="Info",Duration=2})
+                    notify({Title="Keybind Mode",Desc=nm..": "..kbMode,Type="Info",Duration=2})
                 end)
-
                 kbBtn=mk("TextButton",{
                     Text=keyName(kbKey),
-                    Size=dim2(0,54,0,14),
-                    Position=dim2(1,-120,.5,-7),
+                    Size=dim2(0,58,0,15), Position=dim2(1,-124,.5,-7.5),
                     BackgroundColor3=C.bg4, TextColor3=AC,
                     TextSize=9, Font=Enum.Font.GothamBold,
                     AutoButtonColor=false, ZIndex=7, Parent=row,
@@ -1177,15 +1244,14 @@ function Peleccos:CreateWindow(o)
                 onAC(function(c) if not listening then kbBtn.TextColor3=c end end)
                 kbBtn.MouseButton1Click:Connect(function()
                     if listening then return end
-                    listening=true
-                    kbBtn.Text="..."; kbBtn.TextColor3=rgb(255,185,0); kbBtn.BackgroundColor3=rgb(28,24,10)
+                    listening=true; kbBtn.Text="..."; kbBtn.TextColor3=rgb(255,185,0); kbBtn.BackgroundColor3=rgb(28,24,10)
                 end)
             end
 
             local function set(v, silent)
                 val=v
                 tw(track,{BackgroundColor3=v and AC or C.bg4},Enum.EasingStyle.Quint,0.18)
-                tw(knob,{Position=v and dim2(1,-13,.5,-5.5) or dim2(0,2,.5,-5.5)},Enum.EasingStyle.Back,0.22)
+                tw(knob,{Position=v and dim2(1,-14,.5,-6) or dim2(0,2,.5,-6)},Enum.EasingStyle.Back,0.22)
                 if not silent then pcall(cb,v) end
                 if flag then _G[flag]=v end
             end
@@ -1211,7 +1277,7 @@ function Peleccos:CreateWindow(o)
         end
 
         -- ────────────────────────────────────────────────────
-        -- AddSlider  (Milenium-style: pill track, circle knob)
+        -- AddSlider
         -- ────────────────────────────────────────────────────
         function CAT:AddSlider(o5)
             o5=o5 or {}
@@ -1221,30 +1287,28 @@ function Peleccos:CreateWindow(o)
             local val=math.clamp(o5.Default or mn,mn,mx)
 
             local wrap=mk("Frame",{
-                Size=dim2(1,0,0,46),
-                BackgroundColor3=C.bg3, BackgroundTransparency=0.50,
+                Size=dim2(1,0,0,48),
+                BackgroundColor3=C.bg2, BackgroundTransparency=0.42,
                 ZIndex=6, Parent=catPanel,
             })
-            corner(wrap, RC.sharp)
+            corner(wrap, RC.sharp); stroke(wrap, C.br0, 1)
 
-            -- top row
             local top=mk("Frame",{
-                Size=dim2(1,-8,0,18), Position=dim2(0,4,0,4),
+                Size=dim2(1,-8,0,20), Position=dim2(0,4,0,4),
                 BackgroundTransparency=1, ZIndex=7, Parent=wrap,
             })
             mk("TextLabel",{
-                Text=nm, Size=dim2(1,-56,1,0),
+                Text=nm, Size=dim2(1,-60,1,0),
                 BackgroundTransparency=1, TextColor3=C.t1,
                 TextSize=12, Font=Enum.Font.Gotham,
                 TextXAlignment=Enum.TextXAlignment.Left,
                 ZIndex=8, Parent=top,
             })
-            -- value badge (Milenium style: grey box right side)
             local vbg=mk("Frame",{
-                Size=dim2(0,48,0,16), Position=dim2(1,-50,.5,-8),
+                Size=dim2(0,52,0,17), Position=dim2(1,-54,.5,-8.5),
                 BackgroundColor3=C.bg4, ZIndex=8, Parent=top,
             })
-            corner(vbg,RC.sharp)
+            corner(vbg,RC.soft); stroke(vbg,C.br1,1)
             local vLbl=mk("TextLabel",{
                 Text=tostring(val)..suf, Size=dim2(1,0,1,0),
                 BackgroundTransparency=1, TextColor3=C.t2,
@@ -1252,9 +1316,8 @@ function Peleccos:CreateWindow(o)
                 ZIndex=9, Parent=vbg,
             })
 
-            -- track area
             local trackArea=mk("TextButton",{
-                Size=dim2(1,-8,0,18), Position=dim2(0,4,0,24),
+                Size=dim2(1,-8,0,18), Position=dim2(0,4,0,26),
                 BackgroundTransparency=1, Text="", AutoButtonColor=false,
                 ZIndex=9, Parent=wrap,
             })
@@ -1265,36 +1328,32 @@ function Peleccos:CreateWindow(o)
             corner(trackBg,RC.pill)
             local pct=(val-mn)/(mx-mn)
             local fill=mk("Frame",{
-                Size=dim2(pct,-4,1,0), Position=dim2(0,0,0,0),  -- -4 so knob doesn't bleed
+                Size=dim2(pct,0,1,0),
                 BackgroundColor3=AC, ZIndex=8, Parent=trackBg,
             })
             corner(fill,RC.pill)
             onAC(function(c) fill.BackgroundColor3=c end)
 
-            -- circle knob
             local kn=mk("Frame",{
                 AnchorPoint=Vector2.new(.5,.5),
-                Size=dim2(0,12,0,12), Position=dim2(pct,0,.5,0),
-                BackgroundColor3=rgb(244,244,244), ZIndex=10, Parent=trackBg,
+                Size=dim2(0,13,0,13), Position=dim2(pct,0,.5,0),
+                BackgroundColor3=C.t0, ZIndex=10, Parent=trackBg,
             })
-            corner(kn,RC.pill)
-            stroke(kn,C.br2,1)
+            corner(kn,RC.pill); stroke(kn,C.br2,1)
 
-            trackArea.MouseEnter:Connect(function() tw(kn,{Size=dim2(0,14,0,14)},Enum.EasingStyle.Back,0.15) end)
-            trackArea.MouseLeave:Connect(function() tw(kn,{Size=dim2(0,12,0,12)},Enum.EasingStyle.Quint,0.12) end)
+            trackArea.MouseEnter:Connect(function() tw(kn,{Size=dim2(0,15,0,15)},Enum.EasingStyle.Back,0.15) end)
+            trackArea.MouseLeave:Connect(function() tw(kn,{Size=dim2(0,13,0,13)},Enum.EasingStyle.Quint,0.12) end)
 
             local function sv(v, silent)
                 v=math.clamp(math.round(v/step)*step,mn,mx); val=v
                 local p=(v-mn)/(mx-mn)
-                tw(fill,{Size=dim2(p,-4,1,0)},Enum.EasingStyle.Linear,0.05)
-                tw(kn,{Position=dim2(p,0,.5,0)},Enum.EasingStyle.Linear,0.05)
+                tw(fill,{Size=dim2(p,0,1,0)},Enum.EasingStyle.Linear,0.04)
+                tw(kn,{Position=dim2(p,0,.5,0)},Enum.EasingStyle.Linear,0.04)
                 vLbl.Text=tostring(v)..suf
-                tw(vLbl,{TextColor3=C.t0},Enum.EasingStyle.Quint,0.1)
+                tw(vLbl,{TextColor3=C.t0},Enum.EasingStyle.Quint,0.08)
                 if not silent then pcall(cb,v) end
                 if flag then _G[flag]=v end
             end
-            -- value dims back after stop dragging
-            local fadeTask
             local dragging=false
             trackArea.InputBegan:Connect(function(i)
                 if i.UserInputType==Enum.UserInputType.MouseButton1 then
@@ -1324,39 +1383,39 @@ function Peleccos:CreateWindow(o)
         function CAT:AddTextbox(o5)
             o5=o5 or {}; local nm=o5.Name or "Input"; local cb=o5.Callback or function() end
             local wrap=mk("Frame",{
-                Size=dim2(1,0,0,46),
-                BackgroundColor3=C.bg3, BackgroundTransparency=0.50,
+                Size=dim2(1,0,0,48),
+                BackgroundColor3=C.bg2, BackgroundTransparency=0.42,
                 ZIndex=6, Parent=catPanel,
             })
-            corner(wrap,RC.sharp)
-            mk("TextLabel",{Text=nm,Size=dim2(1,-8,0,13),Position=dim2(0,6,0,4),BackgroundTransparency=1,TextColor3=C.t2,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=wrap})
-            local ifrm=mk("Frame",{Size=dim2(1,-8,0,22),Position=dim2(0,4,0,20),BackgroundColor3=C.bg4,ZIndex=7,Parent=wrap})
-            corner(ifrm,RC.sharp); local sk=stroke(ifrm,C.br0,1)
+            corner(wrap,RC.sharp); stroke(wrap,C.br0,1)
+            mk("TextLabel",{Text=nm,Size=dim2(1,-8,0,14),Position=dim2(0,6,0,4),BackgroundTransparency=1,TextColor3=C.t2,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=wrap})
+            local ifrm=mk("Frame",{Size=dim2(1,-8,0,23),Position=dim2(0,4,0,20),BackgroundColor3=C.bg4,ZIndex=7,Parent=wrap})
+            corner(ifrm,RC.soft); local sk=stroke(ifrm,C.br1,1)
             local tb=mk("TextBox",{
                 PlaceholderText=o5.Placeholder or "type here...", Text=o5.Default or "",
-                Size=dim2(1,-36,1,0), Position=dim2(0,6,0,0),
+                Size=dim2(1,-38,1,0), Position=dim2(0,6,0,0),
                 BackgroundTransparency=1, TextColor3=C.t0,
                 PlaceholderColor3=C.t2, TextSize=11,
                 Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left,
                 ClearTextOnFocus=false, ZIndex=8, Parent=ifrm,
             })
             local cfBtn=mk("TextButton",{
-                Text="OK", Size=dim2(0,26,0,18),
-                Position=dim2(1,-28,.5,-9),
+                Text="OK", Size=dim2(0,28,0,19),
+                Position=dim2(1,-30,.5,-9.5),
                 BackgroundColor3=AC, TextColor3=C.t0,
                 TextSize=9, Font=Enum.Font.GothamBold,
                 AutoButtonColor=false, ZIndex=9, Parent=ifrm,
             })
-            corner(cfBtn,RC.sharp)
+            corner(cfBtn,RC.soft)
             onAC(function(c) cfBtn.BackgroundColor3=c end)
             tb.Focused:Connect(function() tw(sk,{Color=AC},Enum.EasingStyle.Quint,0.12) end)
-            tb.FocusLost:Connect(function(en) tw(sk,{Color=C.br0},Enum.EasingStyle.Quint,0.12); if en then pcall(cb,tb.Text) end end)
+            tb.FocusLost:Connect(function(en) tw(sk,{Color=C.br1},Enum.EasingStyle.Quint,0.12); if en then pcall(cb,tb.Text) end end)
             cfBtn.MouseButton1Click:Connect(function() pcall(cb,tb.Text); tb:ReleaseFocus() end)
             local r={}; function r:Set(v) tb.Text=v end; function r:Get() return tb.Text end; return r
         end
 
         -- ────────────────────────────────────────────────────
-        -- AddDropdown  (Milenium-style: inline popup)
+        -- AddDropdown
         -- ────────────────────────────────────────────────────
         function CAT:AddDropdown(o5)
             o5=o5 or {}; local nm=o5.Name or "Dropdown"
@@ -1365,19 +1424,19 @@ function Peleccos:CreateWindow(o)
             local sel=o5.Default or (opts[1] or ""); local msel={}
 
             local wrap=mk("Frame",{
-                Size=dim2(1,0,0,46),
-                BackgroundColor3=C.bg3, BackgroundTransparency=0.50,
+                Size=dim2(1,0,0,48),
+                BackgroundColor3=C.bg2, BackgroundTransparency=0.42,
                 ZIndex=6, Parent=catPanel,
             })
-            corner(wrap,RC.sharp)
-            mk("TextLabel",{Text=nm,Size=dim2(1,-8,0,13),Position=dim2(0,6,0,4),BackgroundTransparency=1,TextColor3=C.t2,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=wrap})
+            corner(wrap,RC.sharp); stroke(wrap,C.br0,1)
+            mk("TextLabel",{Text=nm,Size=dim2(1,-8,0,14),Position=dim2(0,6,0,4),BackgroundTransparency=1,TextColor3=C.t2,TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=wrap})
 
             local hd=mk("TextButton",{
-                Size=dim2(1,-8,0,22), Position=dim2(0,4,0,20),
+                Size=dim2(1,-8,0,23), Position=dim2(0,4,0,20),
                 BackgroundColor3=C.bg4, Text="", AutoButtonColor=false,
                 ZIndex=7, Parent=wrap,
             })
-            corner(hd,RC.sharp); local hsk=stroke(hd,C.br0,1)
+            corner(hd,RC.soft); local hsk=stroke(hd,C.br1,1)
             local sl=mk("TextLabel",{
                 Text=multi and "Select..." or tostring(sel),
                 Size=dim2(1,-22,1,0), Position=dim2(0,6,0,0),
@@ -1386,20 +1445,19 @@ function Peleccos:CreateWindow(o)
                 TextXAlignment=Enum.TextXAlignment.Left,
                 ZIndex=8, Parent=hd,
             })
-            -- arrow indicator
             local arr=mk("TextLabel",{
-                Text="v", Size=dim2(0,14,1,0), Position=dim2(1,-15,0,0),
+                Text="▾", Size=dim2(0,14,1,0), Position=dim2(1,-15,0,0),
                 BackgroundTransparency=1, TextColor3=C.t2,
-                TextSize=8, Font=Enum.Font.Gotham, ZIndex=8, Parent=hd,
+                TextSize=9, Font=Enum.Font.Gotham, ZIndex=8, Parent=hd,
             })
             hd.MouseEnter:Connect(function() tw(hd,{BackgroundColor3=C.bg3},Enum.EasingStyle.Quint,0.1); tw(hsk,{Color=AC},Enum.EasingStyle.Quint,0.1) end)
-            hd.MouseLeave:Connect(function() tw(hd,{BackgroundColor3=C.bg4},Enum.EasingStyle.Quint,0.1); tw(hsk,{Color=C.br0},Enum.EasingStyle.Quint,0.1) end)
+            hd.MouseLeave:Connect(function() tw(hd,{BackgroundColor3=C.bg4},Enum.EasingStyle.Quint,0.1); tw(hsk,{Color=C.br1},Enum.EasingStyle.Quint,0.1) end)
 
             local isOpen=false
             local function closeDD() isOpen=false; tw(arr,{Rotation=0},Enum.EasingStyle.Quint,0.12); closeOV() end
             local function buildDD(ov)
                 local ap=hd.AbsolutePosition; local as=hd.AbsoluteSize
-                local lh=math.min(#opts*22+10,150)
+                local lh=math.min(#opts*24+10,160)
                 local px=math.min(ap.X, SG.AbsoluteSize.X-as.X-10)
                 local py=ap.Y+as.Y+4
                 if py+lh>SG.AbsoluteSize.Y-10 then py=ap.Y-lh-4 end
@@ -1407,7 +1465,7 @@ function Peleccos:CreateWindow(o)
                     Size=dim2(0,as.X,0,0), Position=dim2(0,px,0,py),
                     BackgroundColor3=C.bg1, ZIndex=220, Parent=ov,
                 })
-                corner(pan,RC.sharp); stroke(pan,C.br0,1)
+                corner(pan,RC.sharp); stroke(pan,C.br0,1.5)
                 tw(pan,{Size=dim2(0,as.X,0,lh)},Enum.EasingStyle.Back,0.16)
                 local sc=mk("ScrollingFrame",{
                     Size=dim2(1,0,1,0), BackgroundTransparency=1,
@@ -1416,17 +1474,16 @@ function Peleccos:CreateWindow(o)
                 })
                 onAC(function(c) sc.ScrollBarImageColor3=c end)
                 layout(sc,Enum.FillDirection.Vertical,3); padding(sc,4,4,4,4); autoCanvas(sc)
-                ov.ChildRemoved:Connect(function() isOpen=false end)
                 for _,op in ipairs(opts) do
                     local isSel=multi and table.find(msel,op)~=nil or op==sel
                     local ob=mk("TextButton",{
-                        Size=dim2(1,0,0,20), Text=op,
+                        Size=dim2(1,0,0,22), Text=op,
                         BackgroundColor3=isSel and AC or C.bg4,
                         TextColor3=isSel and C.t0 or C.t2,
                         TextSize=11, Font=Enum.Font.Gotham,
                         AutoButtonColor=false, ZIndex=222, Parent=sc,
                     })
-                    corner(ob,RC.sharp)
+                    corner(ob,RC.soft)
                     ob.MouseEnter:Connect(function()
                         if not(multi and table.find(msel,op)) and op~=sel then
                             tw(ob,{BackgroundColor3=C.bg3,TextColor3=C.t1},Enum.EasingStyle.Quint,0.08)
@@ -1434,8 +1491,7 @@ function Peleccos:CreateWindow(o)
                     end)
                     ob.MouseLeave:Connect(function()
                         local s2=multi and table.find(msel,op)~=nil or op==sel
-                        ob.BackgroundColor3=s2 and AC or C.bg4
-                        ob.TextColor3=s2 and C.t0 or C.t2
+                        ob.BackgroundColor3=s2 and AC or C.bg4; ob.TextColor3=s2 and C.t0 or C.t2
                     end)
                     ob.MouseButton1Click:Connect(function()
                         if multi then
@@ -1472,13 +1528,13 @@ function Peleccos:CreateWindow(o)
             local cb=o5.Callback or function() end
             local h,s,v=Color3.toHSV(col)
             local row=mkRow(30)
-            mk("TextLabel",{Text=nm,Size=dim2(1,-50,1,0),Position=dim2(0,8,0,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=12,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=row})
+            mk("TextLabel",{Text=nm,Size=dim2(1,-52,1,0),Position=dim2(0,8,0,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=12,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=row})
             local sw=mk("TextButton",{
-                Size=dim2(0,32,0,18), Position=dim2(1,-36,.5,-9),
+                Size=dim2(0,34,0,19), Position=dim2(1,-38,.5,-9.5),
                 BackgroundColor3=col, Text="", AutoButtonColor=false,
                 ZIndex=7, Parent=row,
             })
-            corner(sw,RC.sharp); stroke(sw,C.br2,1)
+            corner(sw,RC.soft); stroke(sw,C.br2,1)
             local open=false
             sw.MouseButton1Click:Connect(function()
                 open=not open
@@ -1498,26 +1554,26 @@ function Peleccos:CreateWindow(o)
         end
 
         -- ────────────────────────────────────────────────────
-        -- AddKeybind  (standalone)
+        -- AddKeybind
         -- ────────────────────────────────────────────────────
         function CAT:AddKeybind(o5)
             o5=o5 or {}; local nm=o5.Name or "Keybind"
             local key=o5.Default or Enum.KeyCode.Unknown; local flag=o5.Flag
             local cb=o5.Callback or function() end; local listening=false
             local row=mkRow(30)
-            mk("TextLabel",{Text=nm,Size=dim2(1,-90,1,0),Position=dim2(0,8,0,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=12,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=row})
+            mk("TextLabel",{Text=nm,Size=dim2(1,-94,1,0),Position=dim2(0,8,0,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=12,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=row})
             local kb=mk("TextButton",{
-                Text=keyName(key), Size=dim2(0,74,0,16),
-                Position=dim2(1,-78,.5,-8),
+                Text=keyName(key), Size=dim2(0,78,0,17),
+                Position=dim2(1,-82,.5,-8.5),
                 BackgroundColor3=C.bg4, TextColor3=AC,
                 TextSize=9, Font=Enum.Font.GothamBold,
                 AutoButtonColor=false, ZIndex=7, Parent=row,
             })
-            corner(kb,RC.sharp); stroke(kb,C.br0,1)
+            corner(kb,RC.soft); stroke(kb,C.br0,1)
             onAC(function(c) if not listening then kb.TextColor3=c end end)
             kb.MouseButton1Click:Connect(function()
                 if listening then return end
-                listening=true; kb.Text="..."; kb.TextColor3=rgb(255,185,0); kb.BackgroundColor3=rgb(28,24,10)
+                listening=true; kb.Text="listening..."; kb.TextColor3=rgb(255,185,0); kb.BackgroundColor3=rgb(28,24,10)
             end)
             UIS.InputBegan:Connect(function(i,gpe)
                 if listening and not gpe and i.UserInputType==Enum.UserInputType.Keyboard then
@@ -1531,44 +1587,44 @@ function Peleccos:CreateWindow(o)
         end
 
         -- ────────────────────────────────────────────────────
-        -- AddSeparator  (Milenium-style thin line)
+        -- AddSeparator
         -- ────────────────────────────────────────────────────
         function CAT:AddSeparator()
-            local sep=mk("Frame",{Size=dim2(1,0,0,1),BackgroundColor3=C.br1,BackgroundTransparency=0.4,ZIndex=6,Parent=catPanel})
+            local sep=mk("Frame",{Size=dim2(1,0,0,1),BackgroundColor3=C.br1,BackgroundTransparency=0.35,ZIndex=6,Parent=catPanel})
             mk("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(.06,0),NumberSequenceKeypoint.new(.94,0),NumberSequenceKeypoint.new(1,1)}),Parent=sep})
         end
 
         -- ────────────────────────────────────────────────────
-        -- AddProgressBar  (Milenium-style: thin bar + %)
+        -- AddProgressBar
         -- ────────────────────────────────────────────────────
         function CAT:AddProgressBar(o5)
             o5=o5 or {}; local nm=o5.Name or "Progress"
             local maxV=o5.Max or 100; local cur=math.clamp(o5.Default or 0,0,maxV)
             local wrap=mk("Frame",{
-                Size=dim2(1,0,0,38),
-                BackgroundColor3=C.bg3, BackgroundTransparency=0.50,
+                Size=dim2(1,0,0,40),
+                BackgroundColor3=C.bg2, BackgroundTransparency=0.42,
                 ZIndex=6, Parent=catPanel,
             })
-            corner(wrap,RC.sharp)
-            local top=mk("Frame",{Size=dim2(1,-8,0,17),Position=dim2(0,4,0,4),BackgroundTransparency=1,ZIndex=7,Parent=wrap})
-            mk("TextLabel",{Text=nm,Size=dim2(1,-50,1,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=12,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8,Parent=top})
+            corner(wrap,RC.sharp); stroke(wrap,C.br0,1)
+            local top=mk("Frame",{Size=dim2(1,-8,0,18),Position=dim2(0,4,0,4),BackgroundTransparency=1,ZIndex=7,Parent=wrap})
+            mk("TextLabel",{Text=nm,Size=dim2(1,-52,1,0),BackgroundTransparency=1,TextColor3=C.t1,TextSize=12,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=8,Parent=top})
             local pct=mk("TextLabel",{
                 Text=math.round(cur/maxV*100).."%",
-                Size=dim2(0,44,1,0), Position=dim2(1,-46,0,0),
-                BackgroundTransparency=1, TextColor3=C.t2,
+                Size=dim2(0,46,1,0), Position=dim2(1,-48,0,0),
+                BackgroundTransparency=1, TextColor3=AC,
                 TextSize=11, Font=Enum.Font.GothamSemibold,
                 ZIndex=8, Parent=top,
             })
             onAC(function(c) pct.TextColor3=c end)
             local trk=mk("Frame",{Size=dim2(1,-8,0,4),Position=dim2(0,4,0,28),BackgroundColor3=C.bg4,ZIndex=7,Parent=wrap})
             corner(trk,RC.pill)
-            local fill=mk("Frame",{Size=dim2(cur/maxV,0,1,0),BackgroundColor3=AC,ZIndex=8,Parent=trk})
-            corner(fill,RC.pill)
-            onAC(function(c) fill.BackgroundColor3=c end)
+            local fill2=mk("Frame",{Size=dim2(cur/maxV,0,1,0),BackgroundColor3=AC,ZIndex=8,Parent=trk})
+            corner(fill2,RC.pill)
+            onAC(function(c) fill2.BackgroundColor3=c end)
             local r={Value=cur}
             function r:Set(v)
                 v=math.clamp(v,0,maxV); cur=v
-                tw(fill,{Size=dim2(v/maxV,0,1,0)},Enum.EasingStyle.Quint,0.22)
+                tw(fill2,{Size=dim2(v/maxV,0,1,0)},Enum.EasingStyle.Quint,0.22)
                 pct.Text=math.round(v/maxV*100).."%"
             end
             function r:Get() return cur end; return r
@@ -1582,6 +1638,7 @@ function Peleccos:CreateWindow(o)
     function WO:Toggle() _vis=not _vis; BG.Visible=_vis; BAR.Visible=_vis; if not _vis then SW.Visible=false end end
     function WO:Destroy() SG:Destroy() end
     function WO:SetBackground(id) BG_IMG.Image=id; SW_IMG.Image=id end
+    function WO:SetConfigName(name) CFG.ConfigName=name; wmLabels.config.Text=name end
 
     return WO
 end
