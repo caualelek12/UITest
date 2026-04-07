@@ -19,9 +19,9 @@
     6. Easter egg keyword scan: CFGW is now checked for Visible safely via pcall.
 ]]
 
--- ═══════════════════════════════════════════════════════════════
+
 -- SERVICES
--- ═══════════════════════════════════════════════════════════════
+
 local Players      = game:GetService("Players")
 local UIS          = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -30,17 +30,17 @@ local GuiService   = game:GetService("GuiService")
 local HttpService  = game:GetService("HttpService")   -- needed for JSONEncode
 local LP           = Players.LocalPlayer
 
--- ═══════════════════════════════════════════════════════════════
+
 -- FOLDERS
--- ═══════════════════════════════════════════════════════════════
+
 local _DIR = "PeleccosSoftwares"
 pcall(function() if not isfolder(_DIR)             then makefolder(_DIR) end end)
 pcall(function() if not isfolder(_DIR.."/eggs")    then makefolder(_DIR.."/eggs") end end)
 pcall(function() if not isfolder(_DIR.."/configs") then makefolder(_DIR.."/configs") end end)
 
--- ═══════════════════════════════════════════════════════════════
+
 -- PRIMITIVE HELPERS
--- ═══════════════════════════════════════════════════════════════
+
 local rgb  = Color3.fromRGB
 local hsv  = Color3.fromHSV
 local dim2 = UDim2.new
@@ -111,9 +111,9 @@ local function draggify(frame, handle)
     end)
 end
 
--- ═══════════════════════════════════════════════════════════════
+
 -- PALETTE  (Milenium-style layered dark)
--- ═══════════════════════════════════════════════════════════════
+
 local C = {
     bg0 = rgb(10,10,12), bg1 = rgb(16,16,19), bg2 = rgb(20,20,23),
     bg3 = rgb(26,26,30), bg4 = rgb(34,34,39),
@@ -122,9 +122,9 @@ local C = {
     nOk=rgb(50,200,100), nWarn=rgb(255,185,0), nErr=rgb(255,60,60), nInfo=rgb(0,130,255),
 }
 
--- ═══════════════════════════════════════════════════════════════
+
 -- FPS / PING
--- ═══════════════════════════════════════════════════════════════
+
 local _fps, _ping = 60, 0
 RunService.Heartbeat:Connect(function(dt) _fps = math.clamp(math.floor(1/dt), 0, 999) end)
 task.spawn(function()
@@ -145,17 +145,17 @@ task.spawn(function()
     end
 end)
 
--- ═══════════════════════════════════════════════════════════════
+
 -- EASTER EGG DATA
--- ═══════════════════════════════════════════════════════════════
+
 local EASTER_KW = {
     "peleccos","easter","egg","secret","hidden","password",
     "cheat","hack","admin","god","infinite","unlimited","special","rare","legendary",
 }
 
--- ═══════════════════════════════════════════════════════════════
+
 -- NOTIFICATION SYSTEM
--- ═══════════════════════════════════════════════════════════════
+
 local _notifHolder = nil
 local function initNotifs(sg)
     _notifHolder = mk("Frame",{
@@ -216,9 +216,9 @@ local function notify(o)
     end)
 end
 
--- ═══════════════════════════════════════════════════════════════
+
 -- HSV COLOR PICKER
--- ═══════════════════════════════════════════════════════════════
+
 local function buildColorPicker(ov, anchor, h0, s0, v0, onUpdate, SG_ref)
     local ch, cs, cv = h0, s0, v0
     local pw, ph = 214, 152
@@ -322,11 +322,11 @@ local function buildColorPicker(ov, anchor, h0, s0, v0, onUpdate, SG_ref)
     end)
 end
 
--- ═══════════════════════════════════════════════════════════════
+
 -- SHARED WINDOW BUILDER
 -- builds: outer Frame + inner ImageLabel + drag TextButton
 -- outer stroke colour tracks accent when acReg is provided
--- ═══════════════════════════════════════════════════════════════
+
 local function buildWindow(parent, size, pos, zBase, bgImage, acReg)
     local outer = mk("Frame",{
         BackgroundColor3=rgb(8,8,10), BorderSizePixel=0,
@@ -360,11 +360,11 @@ local function buildWindow(parent, size, pos, zBase, bgImage, acReg)
     return outer, img, dragHandle
 end
 
--- ═══════════════════════════════════════════════════════════════
+
 -- CONFIG SYSTEM
 -- Stores flag→{get,set,ftype} and serialises to JSON.
 -- register() MUST be called to include a flag in saves/loads.
--- ═══════════════════════════════════════════════════════════════
+
 local function makeConfigSystem(scriptName)
     local cfgDir = _DIR.."/configs/"..scriptName.."/"
     pcall(function()
@@ -478,9 +478,9 @@ local function makeConfigSystem(scriptName)
     }
 end
 
--- ═══════════════════════════════════════════════════════════════
+
 -- LIBRARY
--- ═══════════════════════════════════════════════════════════════
+
 local Peleccos = {}; Peleccos.__index = Peleccos
 
 function Peleccos:CreateWindow(o)
@@ -542,9 +542,9 @@ function Peleccos:CreateWindow(o)
         _ovActive = f; fn(f)
     end
 
-    -- ═══════════════════════════════════════════════════════
+  
     -- TOP BAR — sits at Y=0 (above Roblox safe area)
-    -- ═══════════════════════════════════════════════════════
+    
     local BAR_H = 34
     local BAR = mk("Frame",{
         Name="Bar", Size=dim2(1,0,0,BAR_H), Position=dim2(0,0,0,0),
@@ -612,11 +612,9 @@ function Peleccos:CreateWindow(o)
     repositionBar()
     EGG_BTN:GetPropertyChangedSignal("Visible"):Connect(function() task.defer(repositionBar) end)
 
-    -- ═══════════════════════════════════════════════════════
+
     -- WATERMARK
-    -- Always visible (only Settings toggle can hide it).
-    -- Never touched by the Insert key toggle.
-    -- ═══════════════════════════════════════════════════════
+   
     local WM = mk("Frame",{
         Name="Watermark",
         Size=dim2(0,10,0,20), AutomaticSize=Enum.AutomaticSize.X,
@@ -667,9 +665,9 @@ function Peleccos:CreateWindow(o)
         end)
     end)
 
-    -- ═══════════════════════════════════════════════════════
+  
     -- MAIN WINDOW
-    -- ═══════════════════════════════════════════════════════
+  
     local BG, BG_IMG, mainDragHandle = buildWindow(
         SG,
         dim2(0,500,0,380),
@@ -704,10 +702,10 @@ function Peleccos:CreateWindow(o)
         end)
     end)
 
-    -- ═══════════════════════════════════════════════════════
+
     -- SETTINGS WINDOW
     -- Toggled by SET_BTN only. No X button.
-    -- ═══════════════════════════════════════════════════════
+
     local SW, SW_IMG, swDragHandle = buildWindow(
         SG,
         dim2(0,296,0,380),
@@ -885,9 +883,9 @@ function Peleccos:CreateWindow(o)
         task.delay(.5, function() pcall(function() SG:Destroy() end) end)
     end)
 
-    -- ═══════════════════════════════════════════════════════
+
     -- CONFIG MANAGER WINDOW
-    -- ═══════════════════════════════════════════════════════
+  
     local CFGW, CFGW_IMG, cfgwDragHandle = buildWindow(
         SG,
         dim2(0,280,0,370),
@@ -1075,9 +1073,8 @@ function Peleccos:CreateWindow(o)
         notify({Title="Configs Folder",Desc=CFGSYS.dir,Type="Info",Duration=4})
     end)
 
-    -- ── NOW safe to connect button clicks (both CFGW and SW exist) ──
-    -- FIX: connecting these AFTER both windows are defined prevents the
-    --      "attempt to index nil with 'Visible'" crash at line 469.
+    -- NOW safe to connect button clicks (both CFGW and SW exist) 
+
     SET_BTN.MouseButton1Click:Connect(function()
         SW.Visible = not SW.Visible
         if SW.Visible then CFGW.Visible = false end
@@ -1088,9 +1085,9 @@ function Peleccos:CreateWindow(o)
         if CFGW.Visible then SW.Visible = false; refreshCfgList() end
     end)
 
-    -- ═══════════════════════════════════════════════════════
+    
     -- EASTER EGG
-    -- ═══════════════════════════════════════════════════════
+ 
     local _eggActive = false
     task.spawn(function()
         while SG and SG.Parent do
@@ -1178,11 +1175,11 @@ function Peleccos:CreateWindow(o)
         bdClose.MouseButton1Click:Connect(closeEgg)
     end)
 
-    -- ═══════════════════════════════════════════════════════
+
     -- INSERT KEY TOGGLE
     -- Hides BG, BAR and any open sub-windows.
-    -- Does NOT touch WM — watermark is always visible.
-    -- ═══════════════════════════════════════════════════════
+
+  
     local _vis = true
     UIS.InputBegan:Connect(function(i, gpe)
         if not gpe and i.KeyCode == KEY then
@@ -1198,9 +1195,9 @@ function Peleccos:CreateWindow(o)
         end
     end)
 
-    -- ═══════════════════════════════════════════════════════
+
     -- WINDOW OBJECT
-    -- ═══════════════════════════════════════════════════════
+   
     local WO = {_categories={}, _activeCat=nil, Notify=notify, _cfgsys=CFGSYS}
 
     function WO:AddCategory(name)
@@ -1271,7 +1268,7 @@ function Peleccos:CreateWindow(o)
             return KEYS_SHORT[k] or tostring(k):gsub("Enum%.KeyCode%.",""):gsub("Enum%.UserInputType%.","")
         end
 
-        -- ── AddButton ─────────────────────────────────────────────
+        --  AddButton
         function CAT:AddButton(o5)
             o5 = o5 or {}; local nm = o5.Name or "Button"; local cb = o5.Callback or function() end
             local row = mkRow(30)
@@ -1317,7 +1314,7 @@ function Peleccos:CreateWindow(o)
             local r = {}; function r:SetText(t) lbl.Text = t end; return r
         end
 
-        -- ── AddLabel ──────────────────────────────────────────────
+        --  AddLabel
         function CAT:AddLabel(o5)
             o5 = o5 or {}
             local lbl = mk("TextLabel",{
@@ -1335,7 +1332,7 @@ function Peleccos:CreateWindow(o)
             return r
         end
 
-        -- ── AddToggle ─────────────────────────────────────────────
+        -- AddToggle 
         function CAT:AddToggle(o5)
             o5 = o5 or {}
             local nm    = o5.Name or "Toggle"; local val   = o5.Default == true
@@ -1443,7 +1440,7 @@ function Peleccos:CreateWindow(o)
             return r
         end
 
-        -- ── AddSlider ─────────────────────────────────────────────
+        --  AddSlider 
         function CAT:AddSlider(o5)
             o5 = o5 or {}
             local nm   = o5.Name or "Slider"
@@ -1540,8 +1537,8 @@ function Peleccos:CreateWindow(o)
             function r:Set(v) sv(v,true) end; function r:Get() return val end; return r
         end
 
-        -- ── AddTextbox ────────────────────────────────────────────
-        -- No OK button — FocusLost fires callback automatically
+        --  AddTextbox 
+        -- FocusLost fires callback automatically
         function CAT:AddTextbox(o5)
             o5 = o5 or {}; local nm = o5.Name or "Input"; local cb = o5.Callback or function() end; local flag = o5.Flag
             local wrap = mk("Frame",{
@@ -1581,7 +1578,7 @@ function Peleccos:CreateWindow(o)
             local r = {}; function r:Set(v) tb.Text=v end; function r:Get() return tb.Text end; return r
         end
 
-        -- ── AddDropdown ───────────────────────────────────────────
+        -- AddDropdown
         function CAT:AddDropdown(o5)
             o5 = o5 or {}
             local nm    = o5.Name or "Dropdown"; local opts = o5.Options or {}
@@ -1693,7 +1690,7 @@ function Peleccos:CreateWindow(o)
             return r
         end
 
-        -- ── AddColorPicker ────────────────────────────────────────
+        --  AddColorPicker 
         function CAT:AddColorPicker(o5)
             o5 = o5 or {}
             local nm   = o5.Name or "Color"; local col  = o5.Default or rgb(255,80,80)
@@ -1736,7 +1733,7 @@ function Peleccos:CreateWindow(o)
             return r
         end
 
-        -- ── AddKeybind ────────────────────────────────────────────
+        -- AddKeybind 
         function CAT:AddKeybind(o5)
             o5 = o5 or {}
             local nm   = o5.Name or "Keybind"; local key  = o5.Default or Enum.KeyCode.Unknown
@@ -1778,7 +1775,7 @@ function Peleccos:CreateWindow(o)
             return r
         end
 
-        -- ── AddSeparator ──────────────────────────────────────────
+        --  AddSeparator 
         function CAT:AddSeparator()
             local sep = mk("Frame",{
                 Size=dim2(1,0,0,1), BackgroundColor3=C.br1,
@@ -1795,7 +1792,7 @@ function Peleccos:CreateWindow(o)
             })
         end
 
-        -- ── AddProgressBar ────────────────────────────────────────
+        --  AddProgressBar 
         function CAT:AddProgressBar(o5)
             o5 = o5 or {}
             local nm   = o5.Name or "Progress"
@@ -1849,7 +1846,7 @@ function Peleccos:CreateWindow(o)
         return CAT
     end
 
-    -- ── Window-level API ────────────────────────────────────────
+    --  Window-level API 
     function WO:SetAccent(c) AC=c; fireAC() end
     function WO:Toggle()
         _vis=not _vis; BG.Visible=_vis; BAR.Visible=_vis
