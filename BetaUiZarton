@@ -153,6 +153,31 @@ local EASTER_KW = {
     "cheat","hack","admin","god","infinite","unlimited","special","rare","legendary",
 }
 
+-- Image Loader
+
+local BASE_URL = "http://peleccos.ddns.net:45905/"
+
+local function loadImage(path)
+    if not (typeof(isfile)=="function" and typeof(writefile)=="function" and typeof(getcustomasset)=="function") then
+        return ""
+    end
+    local fileName = path:match("[^/]+$")
+    local url = BASE_URL .. path
+    local result = ""
+    pcall(function()
+        if not isfile(fileName) then
+            local data = game:HttpGet(url)
+            if not data or #data < 4 then return end
+            if data:sub(1,4) ~= "\137PNG" then return end
+            writefile(fileName, data)
+        end
+        if isfile(fileName) then
+            result = getcustomasset(fileName) or ""
+        end
+    end)
+    return result
+end
+
 
 -- NOTIFICATION SYSTEM
 
@@ -495,7 +520,7 @@ function Peleccos:CreateWindow(o)
 
     local AC  = o.AccentColor or rgb(160,160,170)
     local KEY = o.Key or Enum.KeyCode.Insert
-    local BG_IMAGE = o.Background or "rbxassetid://115187947618460"
+    local BG_IMAGE = o.Background or loadImage("heh.png")
 
     local _acCBs = {}
     local function onAC(fn) table.insert(_acCBs, fn) end
