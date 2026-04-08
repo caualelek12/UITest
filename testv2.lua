@@ -467,7 +467,7 @@ function Peleccos:CreateWindow(o)
         BuildType  = o.BuildType  or "Public",
         GameName   = tostring(game.Name or "Unknown"),
         GameId     = tostring(game.GameId or 0),
-        ShowWM     = true,
+        ShowWM     = o.ShowWM or false,
     }
 
     local CFGSYS = makeConfigSystem(CFG.ScriptName)
