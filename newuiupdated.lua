@@ -454,11 +454,10 @@ end
 -- MOUSE BUTTON HELPER
 -- ═══════════════════════════════════════════════════════════════
 local MOUSE_BUTTONS = {
-    Enum.UserInputType.MouseButton1,
-    Enum.UserInputType.MouseButton2,
-    Enum.UserInputType.MouseButton3,
-    Enum.UserInputType.MouseButton4,
-    Enum.UserInputType.MouseButton5,
+Enum.KeyCode.MouseLeftButton
+Enum.KeyCode.MouseMiddleButton
+Enum.KeyCode.MouseRightButton
+
 }
 local function isMouseButton(uit)
     for _, mb in ipairs(MOUSE_BUTTONS) do
