@@ -265,7 +265,7 @@ function Peleccos:CreateWindow(o)
 
     -- Global font settings
     local MenuFont   = Enum.Font.GothamBold
-    local VisFont    = Enum.Font.Monospace
+    local VisFont    = Enum.Font.Code
     local ShowWatermark = true
 
     -- Accent callbacks
@@ -1733,11 +1733,11 @@ function Peleccos:CreateWindow(o)
                     for _, fn2 in ipairs(FONTS) do
                         local ob=mk("TextButton",{Size=dim2(1,0,0,24),Text=fn2,
                             BackgroundColor3=C.BgRow,TextColor3=C.Tx1,
-                            TextSize=12,Font=Enum.Font[fn2] or Enum.Font.Monospace,
+                            TextSize=12,Font=Enum.Font[fn2] or Enum.Font.Code,
                             AutoButtonColor=false,ZIndex=222,Parent=sc})
                         corner(ob,UDim.new(0,4))
                         ob.MouseButton1Click:Connect(function()
-                            VisFont = Enum.Font[fn2] or Enum.Font.Monospace
+                            VisFont = Enum.Font[fn2] or Enum.Font.Code
                             visFontSelLbl.Text = fn2
                             fireFont(MenuFont, VisFont)
                             visFontOpen=false; closeOV()
