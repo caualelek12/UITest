@@ -1,0 +1,1555 @@
+--[[
+    PeleccosSoftwares v13.0  (Ion X Edition)
+    Visual: GoTTI-style sidebar layout ported to Peleccos backend
+    ─────────────────────────────────────────────────────────────
+    Backend fixes carried over from v12.5:
+    • Config load fires callbacks (silent=false) so features re-enable
+    • Mouse buttons bindable on toggles & keybinds (MouseButton1-5)
+    • keyName handles both KeyCode and UserInputType
+    • Config save/load supports UserInputType keys
+]]
+
+-- ═══════════════════════════════════════════════════════════════
+-- SERVICES
+-- ═══════════════════════════════════════════════════════════════
+local Players      = game:GetService("Players")
+local UIS          = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService   = game:GetService("RunService")
+local HttpService  = game:GetService("HttpService")
+local LP           = Players.LocalPlayer
+
+-- ═══════════════════════════════════════════════════════════════
+-- FOLDERS
+-- ═══════════════════════════════════════════════════════════════
+local _DIR = "PeleccosSoftwares"
+pcall(function() if not isfolder(_DIR)             then makefolder(_DIR) end end)
+pcall(function() if not isfolder(_DIR.."/configs") then makefolder(_DIR.."/configs") end end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- PRIMITIVE HELPERS
+-- ═══════════════════════════════════════════════════════════════
+local rgb  = Color3.fromRGB
+local dim2 = UDim2.new
+local dim  = UDim.new
+
+local function tw(obj, props, t, style, dir)
+    TweenService:Create(obj,
+        TweenInfo.new(t or 0.14, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
+        props):Play()
+end
+
+local function mk(cls, props)
+    local o = Instance.new(cls)
+    for k,v in pairs(props or {}) do if k ~= "Parent" then o[k] = v end end
+    if props and props.Parent then o.Parent = props.Parent end
+    return o
+end
+
+local function corner(p, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = r or UDim.new(0, 6)
+    c.Parent = p
+    return c
+end
+
+local function padding(p, t, r, b, l)
+    local u = Instance.new("UIPadding")
+    u.PaddingTop    = dim(0, t or 0)
+    u.PaddingRight  = dim(0, r or 0)
+    u.PaddingBottom = dim(0, b or 0)
+    u.PaddingLeft   = dim(0, l or 0)
+    u.Parent = p
+    return u
+end
+
+local function layout(p, dir, gap, ha, va)
+    local l = Instance.new("UIListLayout")
+    l.FillDirection       = dir or Enum.FillDirection.Vertical
+    l.Padding             = dim(0, gap or 0)
+    l.HorizontalAlignment = ha or Enum.HorizontalAlignment.Left
+    l.VerticalAlignment   = va or Enum.VerticalAlignment.Top
+    l.SortOrder           = Enum.SortOrder.LayoutOrder
+    l.Parent = p
+    return l
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- THEME  (GoTTI palette)
+-- ═══════════════════════════════════════════════════════════════
+local C = {
+    BgOuter  = rgb(19,  22,  25),
+    BgSide   = rgb(13,  15,  16),
+    BgSideBd = rgb(25,  28,  30),
+    BgMain   = rgb(13,  15,  16),
+    BgMainBd = rgb(25,  28,  30),
+    BgGroup  = rgb(13,  15,  16),
+    BgGroupH = rgb(35,  39,  42),
+    BgRow    = rgb(26,  32,  36),
+    BgHover  = rgb(19,  22,  25),
+    BgActive = rgb(19,  22,  25),
+    Tx0      = rgb(210, 210, 210),
+    Tx1      = rgb(128, 128, 128),
+    Tx2      = rgb(56,  56,  56),
+    TxSub    = rgb(42,  53,  62),
+    Toggle   = rgb(49,  61,  72),
+    White    = rgb(255, 255, 255),
+    nOk      = rgb(50,  200, 100),
+    nWarn    = rgb(255, 185, 0),
+    nErr     = rgb(255, 60,  60),
+    nInfo    = rgb(0,   130, 255),
+}
+
+-- ═══════════════════════════════════════════════════════════════
+-- FPS / PING
+-- ═══════════════════════════════════════════════════════════════
+local _fps, _ping = 60, 0
+RunService.Heartbeat:Connect(function(dt) _fps = math.clamp(math.floor(1/dt), 0, 999) end)
+task.spawn(function()
+    while true do
+        local ok1 = false
+        pcall(function()
+            local dp = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]
+            if dp then _ping = math.floor(dp:GetValue()); ok1 = true end
+        end)
+        if not ok1 then
+            pcall(function()
+                local t0 = tick()
+                RunService.Heartbeat:Wait()
+                _ping = math.clamp(math.floor((tick()-t0)*1000) - 16, 0, 999)
+            end)
+        end
+        task.wait(1)
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════
+-- MOUSE BUTTON HELPER
+-- ═══════════════════════════════════════════════════════════════
+local MOUSE_BUTTONS = {
+    Enum.UserInputType.MouseButton1,
+    Enum.UserInputType.MouseButton2,
+    Enum.UserInputType.MouseButton3,
+    Enum.UserInputType.MouseButton4,
+    Enum.UserInputType.MouseButton5,
+}
+local function isMouseButton(uit)
+    for _, mb in ipairs(MOUSE_BUTTONS) do
+        if uit == mb then return true end
+    end
+    return false
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- CONFIG SYSTEM
+-- ═══════════════════════════════════════════════════════════════
+local function makeConfigSystem(scriptName)
+    local cfgDir = _DIR.."/configs/"..scriptName.."/"
+    pcall(function()
+        if not isfolder(_DIR.."/configs") then makefolder(_DIR.."/configs") end
+        if not isfolder(cfgDir) then makefolder(cfgDir) end
+    end)
+    local _flags = {}
+
+    local function reg(flag, getFn, setFn, ftype)
+        if flag then _flags[flag] = {get=getFn, set=setFn, ftype=ftype or "any"} end
+    end
+    local function listCfgs()
+        local list = {}
+        pcall(function()
+            if typeof(listfiles)=="function" then
+                for _, f in ipairs(listfiles(cfgDir)) do
+                    local name = tostring(f):match("([^/\\]+)%.json$")
+                    if name then table.insert(list, name) end
+                end
+            end
+        end)
+        return list
+    end
+    local function saveCfg(name)
+        local data = {}
+        for flag, info in pairs(_flags) do
+            pcall(function()
+                local v = info.get(); local ftype = info.ftype
+                if     ftype=="bool"   then data[flag]=(v and "true" or "false")
+                elseif ftype=="number" then data[flag]=tostring(v)
+                elseif ftype=="color"  then data[flag]=math.floor(v.R*255)..","..math.floor(v.G*255)..","..math.floor(v.B*255)
+                elseif ftype=="key"    then data[flag]=tostring(v):gsub("Enum%.KeyCode%.",""):gsub("Enum%.UserInputType%.","")
+                else                        data[flag]=tostring(v) end
+            end)
+        end
+        local json=""; local ok=pcall(function() json=HttpService:JSONEncode(data) end)
+        if not ok then return false end
+        return pcall(function() writefile(cfgDir..name..".json", json) end)
+    end
+    local function loadCfg(name)
+        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(cfgDir..name..".json")) end)
+        if not ok or type(data)~="table" then return false end
+        for flag, val in pairs(data) do
+            local info = _flags[flag]
+            if info then pcall(function()
+                local ftype = info.ftype
+                if     ftype=="bool"   then info.set(val=="true")
+                elseif ftype=="number" then info.set(tonumber(val) or 0)
+                elseif ftype=="color"  then local r,g,b=val:match("(%d+),(%d+),(%d+)"); if r then info.set(rgb(tonumber(r),tonumber(g),tonumber(b))) end
+                elseif ftype=="key"    then
+                    local success = pcall(function() info.set(Enum.KeyCode[val]) end)
+                    if not success then pcall(function() info.set(Enum.UserInputType[val]) end) end
+                else info.set(val) end
+            end) end
+        end
+        return true
+    end
+    local function delCfg(name) pcall(function() delfile(cfgDir..name..".json") end) end
+    local function openDir()
+        pcall(function() if syn and syn.open_file_in_desktop then syn.open_file_in_desktop(cfgDir) end end)
+        pcall(function() if KRNL_ENV and KRNL_ENV.open_file_in_desktop then KRNL_ENV.open_file_in_desktop(cfgDir) end end)
+    end
+    return {register=reg, list=listCfgs, save=saveCfg, load=loadCfg, delete=delCfg, openDir=openDir, dir=cfgDir}
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- LIBRARY
+-- ═══════════════════════════════════════════════════════════════
+local Peleccos = {}; Peleccos.__index = Peleccos
+
+function Peleccos:CreateWindow(o)
+    o = o or {}
+
+    -- Cleanup old instance
+    pcall(function() game:GetService("CoreGui"):FindFirstChild("PeleccosV13"):Destroy() end)
+    pcall(function()
+        local pg = LP:FindFirstChild("PlayerGui")
+        if pg then local x=pg:FindFirstChild("PeleccosV13"); if x then x:Destroy() end end
+    end)
+
+    local AC       = o.AccentColor or rgb(81, 14, 119)
+    local KEY      = o.Key or Enum.KeyCode.Insert
+
+    -- Accent helpers
+    local _acCBs = {}
+    local function onAC(fn) table.insert(_acCBs, fn) end
+    local function fireAC(c) for _,fn in ipairs(_acCBs) do pcall(fn, c) end end
+    local function setAC(c) AC = c; fireAC(c) end
+
+    local CFG = {
+        ScriptName = o.Title      or "PeleccosSoftwares",
+        UserName   = LP and LP.Name or "User",
+        ConfigName = o.ConfigName or "Default",
+        BuildType  = o.BuildType  or "Public",
+        GameName   = tostring(game.Name or "Unknown"),
+        GameId     = tostring(game.GameId or 0),
+    }
+
+    local CFGSYS = makeConfigSystem(CFG.ScriptName)
+
+    -- ── ScreenGui
+    local SG = mk("ScreenGui", {
+        Name="PeleccosV13", ResetOnSpawn=false,
+        ZIndexBehavior=Enum.ZIndexBehavior.Global,
+        IgnoreGuiInset=true, DisplayOrder=999,
+    })
+    local ok = pcall(function() SG.Parent = game:GetService("CoreGui") end)
+    if not ok then SG.Parent = LP:WaitForChild("PlayerGui") end
+
+    -- ── Notification holder (bottom-right)
+    local NotifHolder = mk("Frame", {
+        Size=dim2(0,256,1,-20), Position=dim2(1,-268,0,10),
+        BackgroundTransparency=1, ClipsDescendants=false, Parent=SG,
+    })
+    layout(NotifHolder, Enum.FillDirection.Vertical, 4, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Bottom)
+
+    local function notify(opts)
+        opts = opts or {}
+        local typeKey = opts.Type or "Info"
+        local ac = ({Success=C.nOk, Warning=C.nWarn, Error=C.nErr, Info=C.nInfo})[typeKey] or C.nInfo
+        local typeTxt = ({Success="✓", Warning="!", Error="✗", Info="i"})[typeKey] or "i"
+
+        local Card = mk("Frame", {
+            Size=dim2(0,256,0,44), BackgroundColor3=C.BgSideBd,
+            BorderSizePixel=0, ClipsDescendants=false, Parent=NotifHolder,
+        })
+        corner(Card, UDim.new(0,5))
+        mk("Frame", {Size=dim2(0,3,1,0), BackgroundColor3=ac, BorderSizePixel=0, Parent=Card})
+
+        local BadgeFr = mk("Frame", {
+            Size=dim2(0,18,0,18), Position=dim2(0,10,0,13),
+            BackgroundColor3=ac, BorderSizePixel=0, Parent=Card,
+        })
+        corner(BadgeFr, UDim.new(1,0))
+        mk("TextLabel", {
+            Size=dim2(1,0,1,0), BackgroundTransparency=1,
+            Text=typeTxt, TextColor3=C.White, TextSize=10,
+            Font=Enum.Font.GothamBold, Parent=BadgeFr,
+        })
+
+        mk("TextLabel", {
+            Size=dim2(1,-40,0,14), Position=dim2(0,34,0,6),
+            BackgroundTransparency=1, Text=opts.Title or "Notice",
+            TextColor3=C.Tx0, TextSize=12, Font=Enum.Font.GothamBold,
+            TextXAlignment=Enum.TextXAlignment.Left, Parent=Card,
+        })
+        if opts.Desc and opts.Desc ~= "" then
+            mk("TextLabel", {
+                Size=dim2(1,-40,0,14), Position=dim2(0,34,0,22),
+                BackgroundTransparency=1, Text=opts.Desc,
+                TextColor3=C.Tx1, TextSize=10, Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left,
+                TextTruncate=Enum.TextTruncate.AtEnd, Parent=Card,
+            })
+        end
+
+        Card.BackgroundTransparency = 1
+        tw(Card, {BackgroundTransparency=0}, 0.18)
+        local dur = opts.Duration or 4
+        task.delay(dur, function()
+            tw(Card, {BackgroundTransparency=1, Size=dim2(0,256,0,0)}, 0.2)
+            task.wait(0.22); pcall(function() Card:Destroy() end)
+        end)
+    end
+
+    -- ── Main window (GoTTI layout: 836×616)
+    local WIN_W, WIN_H = 836, 560
+    local SIDE_W = 190
+
+    local Main = mk("Frame", {
+        Name="Main", Size=dim2(0,WIN_W,0,WIN_H),
+        Position=dim2(0.5,-WIN_W/2,0.5,-WIN_H/2),
+        BackgroundColor3=C.BgOuter, BorderSizePixel=0,
+        Visible=false, Parent=SG,
+    })
+    corner(Main, UDim.new(0,8))
+
+    -- Draggable
+    local _drag, _ds, _sp = false, nil, nil
+    Main.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then
+            _drag=true; _ds=i.Position; _sp=Main.Position
+        end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if _drag and i.UserInputType==Enum.UserInputType.MouseMovement then
+            local d=i.Position-_ds
+            Main.Position=dim2(_sp.X.Scale,_sp.X.Offset+d.X,_sp.Y.Scale,_sp.Y.Offset+d.Y)
+        end
+    end)
+    UIS.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then _drag=false end
+    end)
+
+    -- ── Sidebar border frame
+    local SideBd = mk("Frame", {
+        Size=dim2(0,SIDE_W,1,-16), Position=dim2(0,8,0,8),
+        BackgroundColor3=C.BgSideBd, BorderSizePixel=0, Parent=Main,
+    })
+    corner(SideBd, UDim.new(0,6))
+
+    local Sidebar = mk("Frame", {
+        Size=dim2(1,-2,1,-2), Position=dim2(0,1,0,1),
+        BackgroundColor3=C.BgSide, BorderSizePixel=0, Parent=SideBd,
+    })
+    corner(Sidebar, UDim.new(0,5))
+
+    -- ── Sidebar header
+    local SideHdr = mk("Frame", {
+        Size=dim2(1,0,0,55), BackgroundTransparency=1, Parent=Sidebar,
+    })
+    -- Logo box
+    local LogoBox = mk("Frame", {
+        Size=dim2(0,32,0,32), Position=dim2(0,9,0,10),
+        BackgroundColor3=rgb(21,21,21), BorderSizePixel=0, Parent=SideHdr,
+    })
+    corner(LogoBox, UDim.new(0,6))
+    local LogoLbl = mk("TextLabel", {
+        Size=dim2(1,0,1,0), BackgroundTransparency=1,
+        Text="X", TextColor3=AC, TextSize=16, Font=Enum.Font.GothamBold,
+        Parent=LogoBox,
+    })
+    onAC(function(c) LogoLbl.TextColor3=c end)
+
+    mk("TextLabel", {
+        Size=dim2(0,120,0,16), Position=dim2(0,48,0,12),
+        BackgroundTransparency=1, Text=CFG.ScriptName,
+        TextColor3=C.Tx0, TextSize=13, Font=Enum.Font.GothamBold,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=SideHdr,
+    })
+    mk("TextLabel", {
+        Size=dim2(0,120,0,13), Position=dim2(0,48,0,30),
+        BackgroundTransparency=1, Text=CFG.BuildType,
+        TextColor3=AC, TextSize=10, Font=Enum.Font.Code,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=SideHdr,
+    })
+
+    -- Sidebar separator
+    mk("Frame", {
+        Size=dim2(1,-18,0,1), Position=dim2(0,9,0,55),
+        BackgroundColor3=C.BgGroupH, BorderSizePixel=0, Parent=Sidebar,
+    })
+
+    -- ── Sidebar tab scroll
+    local TabScroll = mk("ScrollingFrame", {
+        Size=dim2(1,0,1,-160), Position=dim2(0,0,0,62),
+        BackgroundTransparency=1, ScrollBarThickness=0,
+        BorderSizePixel=0, CanvasSize=dim2(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y, Parent=Sidebar,
+    })
+    layout(TabScroll, Enum.FillDirection.Vertical, 0)
+
+    -- ── Sidebar bottom player card
+    mk("Frame", {
+        Size=dim2(1,-18,0,1), Position=dim2(0,9,1,-86),
+        BackgroundColor3=C.BgGroupH, BorderSizePixel=0, Parent=Sidebar,
+    })
+    local PCard = mk("Frame", {
+        Size=dim2(1,0,0,85), Position=dim2(0,0,1,-85),
+        BackgroundTransparency=1, Parent=Sidebar,
+    })
+    local PAvaWrap = mk("Frame", {
+        Size=dim2(0,32,0,32), Position=dim2(0,9,0,10),
+        BackgroundColor3=C.BgRow, BorderSizePixel=0, Parent=PCard,
+    })
+    corner(PAvaWrap, UDim.new(0,4))
+    mk("ImageLabel", {
+        Size=dim2(1,0,1,0), BackgroundTransparency=1, BorderSizePixel=0,
+        Image="https://www.roblox.com/headshot-thumbnail/image?userId="..LP.UserId.."&width=48&height=48&format=png",
+        Parent=PAvaWrap,
+    })
+    mk("TextLabel", {
+        Size=dim2(0,110,0,15), Position=dim2(0,48,0,10),
+        BackgroundTransparency=1, Text=LP.DisplayName,
+        TextColor3=C.Tx0, TextSize=12, Font=Enum.Font.GothamBold,
+        TextXAlignment=Enum.TextXAlignment.Left, TextTruncate=Enum.TextTruncate.AtEnd,
+        Parent=PCard,
+    })
+    mk("TextLabel", {
+        Size=dim2(0,110,0,13), Position=dim2(0,48,0,27),
+        BackgroundTransparency=1, Text="@"..LP.Name,
+        TextColor3=C.TxSub, TextSize=10, Font=Enum.Font.Code,
+        TextXAlignment=Enum.TextXAlignment.Left, TextTruncate=Enum.TextTruncate.AtEnd,
+        Parent=PCard,
+    })
+    -- FPS / Ping watermark in player card
+    local wFps = mk("TextLabel", {
+        Size=dim2(0.5,0,0,13), Position=dim2(0,9,0,55),
+        BackgroundTransparency=1, Text="-- fps",
+        TextColor3=C.TxSub, TextSize=10, Font=Enum.Font.Code,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=PCard,
+    })
+    local wPing = mk("TextLabel", {
+        Size=dim2(0.5,0,0,13), Position=dim2(0.5,0,0,55),
+        BackgroundTransparency=1, Text="-- ms",
+        TextColor3=C.TxSub, TextSize=10, Font=Enum.Font.Code,
+        TextXAlignment=Enum.TextXAlignment.Left, Parent=PCard,
+    })
+    RunService.Heartbeat:Connect(function()
+        pcall(function() wFps.Text=_fps.."fps"; wPing.Text=_ping.."ms" end)
+    end)
+
+    -- ── Content area
+    local ContentBd = mk("Frame", {
+        Size=dim2(1,-(SIDE_W+24),1,-16), Position=dim2(0,SIDE_W+16,0,8),
+        BackgroundColor3=C.BgMainBd, BorderSizePixel=0, Parent=Main,
+    })
+    corner(ContentBd, UDim.new(0,6))
+
+    local ContentArea = mk("Frame", {
+        Size=dim2(1,-2,1,-2), Position=dim2(0,1,0,1),
+        BackgroundColor3=C.BgMain, BorderSizePixel=0, Parent=ContentBd,
+    })
+    corner(ContentArea, UDim.new(0,5))
+
+    -- ── SubTab bar (top strip)
+    local SubTabBar = mk("Frame", {
+        Size=dim2(1,0,0,44), BackgroundColor3=C.BgMain,
+        BorderSizePixel=0, ClipsDescendants=true, Parent=ContentArea,
+    })
+    mk("Frame", {
+        Size=dim2(1,0,0,1), Position=dim2(0,0,1,-1),
+        BackgroundColor3=C.BgGroupH, BorderSizePixel=0, Parent=SubTabBar,
+    })
+
+    -- ── Panel scroll area (below subtab bar)
+    local PanelArea = mk("Frame", {
+        Size=dim2(1,0,1,-45), Position=dim2(0,0,0,45),
+        BackgroundTransparency=1, ClipsDescendants=true, Parent=ContentArea,
+    })
+    local PanelScroll = mk("ScrollingFrame", {
+        Size=dim2(1,0,1,0), BackgroundTransparency=1,
+        ScrollBarThickness=2, ScrollBarImageColor3=C.Toggle,
+        BorderSizePixel=0, CanvasSize=dim2(0,0,0,0),
+        AutomaticCanvasSize=Enum.AutomaticSize.Y, Parent=PanelArea,
+    })
+    onAC(function(c) PanelScroll.ScrollBarImageColor3=c end)
+
+    -- ── Config manager popup (hidden panel)
+    local CfgPanel = mk("Frame", {
+        Size=dim2(0,260,0,320), Position=dim2(1,-268,0,50),
+        BackgroundColor3=C.BgSideBd, BorderSizePixel=0,
+        Visible=false, ZIndex=300, Parent=SG,
+    })
+    corner(CfgPanel, UDim.new(0,6))
+    mk("TextLabel", {
+        Size=dim2(1,0,0,32), BackgroundColor3=C.BgGroupH,
+        BorderSizePixel=0, Text="Configs", TextColor3=C.Tx0,
+        TextSize=12, Font=Enum.Font.GothamBold, ZIndex=301, Parent=CfgPanel,
+    })
+
+    local cfgInputFr = mk("Frame", {
+        Size=dim2(1,-8,0,24), Position=dim2(0,4,0,36),
+        BackgroundColor3=C.BgRow, BorderSizePixel=0, ZIndex=301, Parent=CfgPanel,
+    })
+    corner(cfgInputFr, UDim.new(0,4))
+    local cfgInput = mk("TextBox", {
+        Size=dim2(1,-8,1,0), Position=dim2(0,4,0,0),
+        BackgroundTransparency=1, PlaceholderText="config name...",
+        Text="", TextColor3=C.Tx0, PlaceholderColor3=C.Tx2,
+        TextSize=11, Font=Enum.Font.Gotham, ClearTextOnFocus=false,
+        ZIndex=302, Parent=cfgInputFr,
+    })
+
+    local cfgListSF = mk("ScrollingFrame", {
+        Size=dim2(1,-8,1,-100), Position=dim2(0,4,0,66),
+        BackgroundTransparency=1, ScrollBarThickness=2,
+        ScrollBarImageColor3=C.Toggle, BorderSizePixel=0,
+        CanvasSize=dim2(0,0,0,0), ZIndex=301, Parent=CfgPanel,
+    })
+    local cfgLL = layout(cfgListSF, Enum.FillDirection.Vertical, 3)
+    cfgLL:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        task.defer(function() if cfgListSF and cfgListSF.Parent then
+            cfgListSF.CanvasSize=dim2(0,0,0,cfgLL.AbsoluteContentSize.Y+6) end end)
+    end)
+
+    local function refreshCfgList()
+        for _,ch in ipairs(cfgListSF:GetChildren()) do
+            if not ch:IsA("UIListLayout") then ch:Destroy() end
+        end
+        local list = CFGSYS.list()
+        if #list == 0 then
+            mk("TextLabel", {
+                Size=dim2(1,0,0,30), BackgroundTransparency=1,
+                Text="No configs yet.", TextColor3=C.Tx2,
+                TextSize=10, Font=Enum.Font.Gotham, ZIndex=302, Parent=cfgListSF,
+            })
+            return
+        end
+        for _, name in ipairs(list) do
+            local row = mk("Frame", {
+                Size=dim2(1,0,0,28), BackgroundColor3=C.BgRow,
+                BorderSizePixel=0, ZIndex=302, Parent=cfgListSF,
+            })
+            corner(row, UDim.new(0,4))
+            mk("TextLabel", {
+                Size=dim2(1,-86,1,0), Position=dim2(0,6,0,0),
+                BackgroundTransparency=1, Text=name, TextColor3=C.Tx1,
+                TextSize=11, Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left,
+                TextTruncate=Enum.TextTruncate.AtEnd, ZIndex=303, Parent=row,
+            })
+            local function mkSmBtn(txt, xo, col, cb2)
+                local b = mk("TextButton", {
+                    Size=dim2(0,24,0,18), Position=dim2(1,xo,0.5,-9),
+                    BackgroundColor3=col, Text=txt, TextColor3=C.Tx0,
+                    TextSize=9, Font=Enum.Font.GothamBold,
+                    AutoButtonColor=false, BorderSizePixel=0, ZIndex=303, Parent=row,
+                })
+                corner(b, UDim.new(0,3))
+                b.MouseButton1Click:Connect(cb2)
+            end
+            mkSmBtn("L", -82, rgb(30,80,50), function()
+                if CFGSYS.load(name) then
+                    CFG.ConfigName=name
+                    notify({Title="Loaded",Desc=name,Type="Success",Duration=2})
+                else
+                    notify({Title="Load Failed",Desc=name,Type="Error",Duration=2})
+                end
+            end)
+            mkSmBtn("S", -54, rgb(30,50,80), function()
+                if CFGSYS.save(name) then notify({Title="Saved",Desc=name,Type="Success",Duration=2})
+                else notify({Title="Save Failed",Type="Error",Duration=2}) end
+            end)
+            mkSmBtn("X", -26, rgb(80,30,30), function()
+                CFGSYS.delete(name); refreshCfgList()
+                notify({Title="Deleted",Desc=name,Type="Warning",Duration=2})
+            end)
+        end
+    end
+
+    -- Create / folder buttons
+    local cfgBtnRow = mk("Frame", {
+        Size=dim2(1,-8,0,24), Position=dim2(0,4,1,-28),
+        BackgroundTransparency=1, ZIndex=301, Parent=CfgPanel,
+    })
+    layout(cfgBtnRow, Enum.FillDirection.Horizontal, 4)
+    local function mkCfgBtn(txt, cb2)
+        local b = mk("TextButton", {
+            Size=dim2(0.5,-2,1,0), BackgroundColor3=C.BgRow,
+            Text=txt, TextColor3=C.Tx1, TextSize=10, Font=Enum.Font.GothamBold,
+            AutoButtonColor=false, BorderSizePixel=0, ZIndex=302, Parent=cfgBtnRow,
+        })
+        corner(b, UDim.new(0,4))
+        b.MouseButton1Click:Connect(cb2)
+        return b
+    end
+    mkCfgBtn("+ Create", function()
+        local name = cfgInput.Text ~= "" and cfgInput.Text or ("Config"..tostring(#CFGSYS.list()+1))
+        name = name:gsub("[^%w%-%_]","_"); cfgInput.Text=""
+        if CFGSYS.save(name) then
+            notify({Title="Created",Desc=name,Type="Success",Duration=2}); refreshCfgList()
+        else
+            notify({Title="Create Failed",Type="Error",Duration=3})
+        end
+    end)
+    mkCfgBtn("Open Folder", function() CFGSYS.openDir() end)
+
+    -- ── Overlay (for dropdowns/pickers)
+    local _ovRoot = mk("Frame", {
+        Name="OvRoot", Size=dim2(1,0,1,0),
+        BackgroundTransparency=1, ZIndex=200, Parent=SG,
+    })
+    local _ovActive = nil
+    local function closeOV() if _ovActive then _ovActive:Destroy(); _ovActive=nil end end
+    local function openOV(fn)
+        closeOV()
+        local f = mk("Frame", {Size=dim2(1,0,1,0),BackgroundTransparency=1,ZIndex=200,Parent=_ovRoot})
+        local bg = mk("TextButton", {Size=dim2(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=200,Parent=f})
+        local ok2=false; task.delay(0.1,function() ok2=true end)
+        bg.MouseButton1Click:Connect(function() if ok2 then closeOV() end end)
+        _ovActive=f; fn(f)
+    end
+
+    -- ── Tabs / subtabs state
+    local Tabs      = {}
+    local SubTabScrolls = {}
+    local TabFrames = {}
+    local SubTabsMap = {}
+    local ActiveTab = nil
+    local ActiveSubs = {}
+
+    -- Dynamic accent registry
+    local DynFills = {}
+    local DynTexts = {}
+    local DynUnders = {}
+    local function regFill(f) table.insert(DynFills, f) end
+    local function regText(t) table.insert(DynTexts, t) end
+    local function regUnder(u, tk, sk) table.insert(DynUnders, {under=u, tabKey=tk, subKey=sk}) end
+
+    local function applyAccent(c)
+        for _, f in ipairs(DynFills) do pcall(function() f.BackgroundColor3=c end) end
+        for _, t in ipairs(DynTexts) do pcall(function() t.TextColor3=c end) end
+        for _, e in ipairs(DynUnders) do
+            pcall(function()
+                if e.under.Visible then e.under.BackgroundColor3=c end
+            end)
+        end
+        for k, btn in pairs(Tabs) do
+            if k==ActiveTab then
+                local ind=btn:FindFirstChild("Ind")
+                if ind then pcall(function() ind.BackgroundColor3=c end) end
+                local ico=btn:FindFirstChild("Ico")
+                if ico then pcall(function() ico.TextColor3=c end) end
+            end
+        end
+        for tabKey, stMap in pairs(SubTabsMap) do
+            for sk, st in pairs(stMap) do
+                if ActiveTab==tabKey and ActiveSubs[tabKey]==sk then
+                    pcall(function() st.lbl.TextColor3=c end)
+                end
+            end
+        end
+    end
+    onAC(applyAccent)
+
+    local function SetActiveTab(key)
+        -- hide all
+        for k2, scr in pairs(SubTabScrolls) do scr.Visible=false end
+        for _, tf in pairs(TabFrames) do tf.Visible=false end
+        for k, b in pairs(Tabs) do
+            local ind=b:FindFirstChild("Ind"); if ind then ind.Visible=false end
+            local lbl=b:FindFirstChild("Lbl"); if lbl then lbl.TextColor3=C.Tx2 end
+            local ico=b:FindFirstChild("Ico"); if ico then ico.TextColor3=C.Tx2 end
+            b.BackgroundTransparency=1
+        end
+        ActiveTab=key
+        local btn=Tabs[key]; if not btn then return end
+        local ind=btn:FindFirstChild("Ind")
+        if ind then ind.Visible=true; ind.BackgroundColor3=AC end
+        local lbl=btn:FindFirstChild("Lbl"); if lbl then lbl.TextColor3=C.Tx0 end
+        local ico=btn:FindFirstChild("Ico"); if ico then ico.TextColor3=AC end
+        btn.BackgroundColor3=C.BgActive; btn.BackgroundTransparency=0
+        if SubTabScrolls[key] then SubTabScrolls[key].Visible=true end
+        local activeSub=ActiveSubs[key]
+        if activeSub and SubTabsMap[key] and SubTabsMap[key][activeSub] then
+            local st=SubTabsMap[key][activeSub]
+            st.frame.Visible=true; st.lbl.TextColor3=AC
+            st.under.Visible=true; st.under.BackgroundColor3=AC
+        end
+        PanelScroll.CanvasPosition=Vector2.new(0,0)
+    end
+
+    -- ── Key toggle (show/hide)
+    local _vis = true
+    UIS.InputBegan:Connect(function(i, gpe)
+        if not gpe and i.KeyCode==KEY then
+            _vis=not _vis; Main.Visible=_vis
+            CfgPanel.Visible=false
+        end
+    end)
+
+    -- ── Window object
+    local WO = {_categories={}, _activeCat=nil, _cfgsys=CFGSYS}
+
+    function WO:Notify(opts) notify(opts) end
+
+    function WO:AddCategory(name)
+        -- Each category = a sidebar tab button + subtab scroll
+        local isFirst = #self._categories==0
+        local catKey = name:lower():gsub("%s","_").."_"..tostring(#self._categories)
+
+        -- Sidebar tab button
+        local Btn = mk("TextButton", {
+            Name=catKey, Size=dim2(1,0,0,34),
+            BackgroundColor3=C.BgHover, BackgroundTransparency=1,
+            Text="", BorderSizePixel=0, Parent=TabScroll,
+        })
+
+        local Ind = mk("Frame", {
+            Name="Ind", Size=dim2(0,2,0,18), Position=dim2(0,8,0.5,-9),
+            BackgroundColor3=AC, BorderSizePixel=0, Visible=false, Parent=Btn,
+        })
+        corner(Ind, UDim.new(0,1))
+
+        mk("TextLabel", {
+            Name="Lbl", Size=dim2(1,-36,1,0), Position=dim2(0,30,0,0),
+            BackgroundTransparency=1, Text=name, TextColor3=C.Tx2,
+            TextSize=13, Font=Enum.Font.GothamBold,
+            TextXAlignment=Enum.TextXAlignment.Left, Parent=Btn,
+        })
+
+        Btn.MouseEnter:Connect(function()
+            if catKey~=ActiveTab then
+                tw(Btn, {BackgroundColor3=C.BgHover, BackgroundTransparency=0}, 0.1)
+                local lbl=Btn:FindFirstChild("Lbl"); if lbl then lbl.TextColor3=C.Tx1 end
+            end
+        end)
+        Btn.MouseLeave:Connect(function()
+            if catKey~=ActiveTab then
+                tw(Btn, {BackgroundTransparency=1}, 0.1)
+                local lbl=Btn:FindFirstChild("Lbl"); if lbl then lbl.TextColor3=C.Tx2 end
+            end
+        end)
+
+        Tabs[catKey] = Btn
+
+        -- Subtab scroll inside subtab bar
+        local StScroll = mk("ScrollingFrame", {
+            Size=dim2(1,0,1,-1), BackgroundTransparency=1,
+            ScrollBarThickness=0, BorderSizePixel=0,
+            CanvasSize=dim2(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.X,
+            Visible=false, Parent=SubTabBar,
+        })
+        local StLayout = layout(StScroll, Enum.FillDirection.Horizontal, 0,
+            Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center)
+        padding(StScroll, 0, 0, 0, 12)
+        SubTabScrolls[catKey] = StScroll
+        SubTabsMap[catKey] = {}
+        ActiveSubs[catKey] = nil
+
+        Btn.MouseButton1Click:Connect(function() SetActiveTab(catKey) end)
+
+        -- CAT object (acts like a tab, can add subtabs via AddSection or direct widgets)
+        local CAT = {_name=name, _key=catKey, _win=self, _subOrder=0}
+        table.insert(self._categories, CAT)
+        if isFirst then self._activeCat=CAT end
+
+        -- ── Helpers for widgets
+        local KEYS_SHORT = {
+            [Enum.KeyCode.LeftShift]="LSH",[Enum.KeyCode.RightShift]="RSH",
+            [Enum.KeyCode.LeftControl]="LCT",[Enum.KeyCode.RightControl]="RCT",
+            [Enum.KeyCode.Insert]="INS",[Enum.KeyCode.Backspace]="BS",
+            [Enum.KeyCode.Return]="ENT",[Enum.KeyCode.CapsLock]="CAP",
+            [Enum.KeyCode.Escape]="ESC",[Enum.KeyCode.Space]="SPC",
+            [Enum.UserInputType.MouseButton1]="MB1",[Enum.UserInputType.MouseButton2]="MB2",
+            [Enum.UserInputType.MouseButton3]="MB3",[Enum.UserInputType.MouseButton4]="MB4",
+            [Enum.UserInputType.MouseButton5]="MB5",
+        }
+        local function keyName(k)
+            if not k or k==Enum.KeyCode.Unknown then return "NONE" end
+            return KEYS_SHORT[k] or tostring(k):gsub("Enum%.KeyCode%.",""):gsub("Enum%.UserInputType%.","")
+        end
+
+        -- ── AddSubTab: creates a subtab strip button + panel frame
+        -- Returns a panel parent (Frame) to add widgets into
+        local function addSubTab(label)
+            CAT._subOrder = CAT._subOrder + 1
+            local subKey = catKey.."_sub"..CAT._subOrder
+
+            local StBtn = mk("TextButton", {
+                Name=subKey, Size=dim2(0,0,1,-1),
+                AutomaticSize=Enum.AutomaticSize.X,
+                BackgroundTransparency=1, Text="", BorderSizePixel=0,
+                LayoutOrder=CAT._subOrder, Parent=StScroll,
+            })
+            padding(StBtn, 0, 12, 0, 12)
+
+            local StLbl = mk("TextLabel", {
+                Name="Lbl", Size=dim2(1,0,1,0), BackgroundTransparency=1,
+                Text=label, TextColor3=C.Tx2,
+                TextSize=12, Font=Enum.Font.GothamBold, Parent=StBtn,
+            })
+
+            local StUnder = mk("Frame", {
+                Name="Under", Size=dim2(1,0,0,2), Position=dim2(0,0,1,-2),
+                BackgroundColor3=AC, BorderSizePixel=0, Visible=false, Parent=StBtn,
+            })
+            regUnder(StUnder, catKey, subKey)
+
+            -- Panel frame
+            local TF = mk("Frame", {
+                Name=subKey, Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+                BackgroundTransparency=1, Visible=false, Parent=PanelScroll,
+            })
+            local TFL = layout(TF, Enum.FillDirection.Vertical, 10)
+            padding(TF, 10, 10, 10, 10)
+
+            TabFrames[subKey] = TF
+            SubTabsMap[catKey][subKey] = {btn=StBtn, frame=TF, lbl=StLbl, under=StUnder}
+
+            if ActiveSubs[catKey]==nil then
+                ActiveSubs[catKey] = subKey
+            end
+
+            StBtn.MouseButton1Click:Connect(function()
+                for sk2, st2 in pairs(SubTabsMap[catKey]) do
+                    st2.frame.Visible=false; st2.lbl.TextColor3=C.Tx2
+                    st2.under.Visible=false; st2.btn.BackgroundTransparency=1
+                end
+                TF.Visible=true; StLbl.TextColor3=AC
+                StUnder.Visible=true; StUnder.BackgroundColor3=AC
+                ActiveSubs[catKey]=subKey
+                PanelScroll.CanvasPosition=Vector2.new(0,0)
+            end)
+
+            return TF
+        end
+
+        -- ── Default panel (no subtabs scenario — one auto subtab per category)
+        local _defaultPanel = nil
+        local function getDefaultPanel()
+            if not _defaultPanel then
+                _defaultPanel = addSubTab(name)
+            end
+            return _defaultPanel
+        end
+
+        -- ── Section builder (creates a grouped card inside a panel)
+        local function mkSection(parent, title, order)
+            local Card = mk("Frame", {
+                Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+                BackgroundColor3=C.BgGroupH, BorderSizePixel=0,
+                LayoutOrder=order or 0, Parent=parent,
+            })
+            corner(Card, UDim.new(0,7))
+            local Inner = mk("Frame", {
+                Size=dim2(1,-2,1,-2), Position=dim2(0,1,0,1),
+                BackgroundColor3=C.BgGroup, BorderSizePixel=0,
+                AutomaticSize=Enum.AutomaticSize.Y, Parent=Card,
+            })
+            corner(Inner, UDim.new(0,6))
+            local Hdr = mk("Frame", {
+                Size=dim2(1,0,0,28), BackgroundTransparency=1, Parent=Inner,
+            })
+            mk("TextLabel", {
+                Size=dim2(1,-16,1,0), Position=dim2(0,8,0,0),
+                BackgroundTransparency=1, Text=title, TextColor3=C.Tx0,
+                TextSize=12, Font=Enum.Font.GothamBold,
+                TextXAlignment=Enum.TextXAlignment.Left, Parent=Hdr,
+            })
+            mk("Frame", {
+                Size=dim2(1,0,0,1), Position=dim2(0,0,0,28),
+                BackgroundColor3=C.BgGroupH, BorderSizePixel=0, Parent=Inner,
+            })
+            local Body = mk("Frame", {
+                Size=dim2(1,0,0,0), Position=dim2(0,0,0,30),
+                BackgroundTransparency=1, AutomaticSize=Enum.AutomaticSize.Y,
+                Parent=Inner,
+            })
+            layout(Body, Enum.FillDirection.Vertical, 0)
+            padding(Body, 4, 8, 8, 8)
+            return Card, Body
+        end
+
+        -- ── Row builder
+        local function mkRow(parent, h)
+            local r = mk("Frame", {
+                Size=dim2(1,0,0,h or 28), BackgroundTransparency=1, Parent=parent,
+            })
+            return r
+        end
+
+        -- ────────────────────────────────────────────────
+        -- PUBLIC API
+        -- ────────────────────────────────────────────────
+
+        function CAT:AddToggle(o5)
+            o5 = o5 or {}
+            local nm=o5.Name or "Toggle"; local val=o5.Default==true
+            local cb=o5.Callback or function() end; local flag=o5.Flag
+            local hasKB=o5.Keybind~=nil; local kbMode="Toggle"
+            local kbKey=o5.Keybind or Enum.KeyCode.Unknown
+            local listening=false; local holding=false
+
+            local panel = getDefaultPanel()
+            local row = mkRow(panel, hasKB and 32 or 28)
+
+            -- Label
+            local Lbl = mk("TextLabel", {
+                Size=dim2(1,-(hasKB and 154 or 36),1,0), Position=dim2(0,0,0,0),
+                BackgroundTransparency=1, Text=nm,
+                TextColor3=val and C.Tx0 or C.Tx1,
+                TextSize=13, Font=Enum.Font.GothamBold,
+                TextXAlignment=Enum.TextXAlignment.Left, Parent=row,
+            })
+
+            -- Toggle track
+            local Track = mk("Frame", {
+                Size=dim2(0,26,0,14), Position=dim2(1,-28,0.5,-7),
+                BackgroundColor3=val and AC or C.Toggle,
+                BorderSizePixel=0, Parent=row,
+            })
+            corner(Track, UDim.new(1,0))
+            onAC(function(c) if val then Track.BackgroundColor3=c end end)
+
+            local Ball = mk("Frame", {
+                Size=dim2(0,10,0,10),
+                Position=val and dim2(1,-12,0.5,-5) or dim2(0,2,0.5,-5),
+                BackgroundColor3=C.White, BorderSizePixel=0, Parent=Track,
+            })
+            corner(Ball, UDim.new(1,0))
+
+            -- Keybind buttons
+            local kbBtn, modeBtn
+            if hasKB then
+                modeBtn = mk("TextButton", {
+                    Size=dim2(0,16,0,14), Position=dim2(1,-152,0.5,-7),
+                    BackgroundColor3=C.BgRow, TextColor3=C.Tx2,
+                    Text="T", TextSize=8, Font=Enum.Font.GothamBold,
+                    AutoButtonColor=false, BorderSizePixel=0, Parent=row,
+                })
+                corner(modeBtn, UDim.new(0,3))
+                local modeOrder={"Toggle","Hold","Always"}; local modeAbbr={Toggle="T",Hold="H",Always="A"}
+                modeBtn.MouseButton2Click:Connect(function()
+                    local ci=1; for i,m in ipairs(modeOrder) do if m==kbMode then ci=i; break end end
+                    kbMode=modeOrder[(ci%#modeOrder)+1]; modeBtn.Text=modeAbbr[kbMode]
+                    notify({Title="Bind Mode",Desc=nm..": "..kbMode,Type="Info",Duration=1.5})
+                end)
+
+                kbBtn = mk("TextButton", {
+                    Size=dim2(0,62,0,14), Position=dim2(1,-126,0.5,-7),
+                    BackgroundColor3=C.BgRow, TextColor3=AC,
+                    Text=keyName(kbKey), TextSize=9, Font=Enum.Font.GothamBold,
+                    AutoButtonColor=false, BorderSizePixel=0, Parent=row,
+                })
+                corner(kbBtn, UDim.new(0,3))
+                onAC(function(c) if not listening then kbBtn.TextColor3=c end end)
+                kbBtn.MouseButton1Click:Connect(function()
+                    if listening then return end
+                    listening=true; kbBtn.Text="..."; kbBtn.TextColor3=rgb(255,185,0)
+                    kbBtn.BackgroundColor3=rgb(28,24,10)
+                end)
+            end
+
+            local function set(v, silent)
+                val=v
+                tw(Track, {BackgroundColor3=v and AC or C.Toggle}, 0.14)
+                tw(Ball,  {Position=v and dim2(1,-12,0.5,-5) or dim2(0,2,0.5,-5)}, 0.16)
+                Lbl.TextColor3 = v and C.Tx0 or C.Tx1
+                if not silent then pcall(cb, v) end
+                if flag then _G[flag]=v end
+            end
+
+            -- Hit area
+            local Hit = mk("TextButton", {
+                Size=dim2(1,0,1,0), BackgroundTransparency=1,
+                Text="", AutoButtonColor=false, Parent=row,
+            })
+            Hit.MouseButton1Click:Connect(function() set(not val) end)
+
+            if hasKB then
+                UIS.InputBegan:Connect(function(i, gpe)
+                    if listening and not gpe and (i.UserInputType==Enum.UserInputType.Keyboard or isMouseButton(i.UserInputType)) then
+                        kbKey = isMouseButton(i.UserInputType) and i.UserInputType or i.KeyCode
+                        kbBtn.Text=keyName(kbKey); kbBtn.TextColor3=AC
+                        kbBtn.BackgroundColor3=C.BgRow; listening=false
+                    elseif not listening and not gpe and (i.KeyCode==kbKey or i.UserInputType==kbKey) and kbKey~=Enum.KeyCode.Unknown then
+                        if kbMode=="Toggle" then set(not val)
+                        elseif kbMode=="Hold" then holding=true; set(true)
+                        elseif kbMode=="Always" then set(true) end
+                    end
+                end)
+                UIS.InputEnded:Connect(function(i)
+                    if holding and (i.KeyCode==kbKey or i.UserInputType==kbKey) and kbMode=="Hold" then
+                        holding=false; set(false)
+                    end
+                end)
+            end
+
+            -- FIX: silent=false so config load fires callbacks
+            if flag then _G[flag]=val; CFGSYS.register(flag,function() return val end,function(v) set(v,false) end,"bool") end
+            local r={Value=val}; function r:Set(v) set(v,true) end; function r:Get() return val end; return r
+        end
+
+        function CAT:AddSlider(o5)
+            o5=o5 or {}
+            local nm=o5.Name or "Slider"; local mn=o5.Min or 0; local mx=o5.Max or 100
+            local step=o5.Step or 1; local suf=o5.Suffix or ""; local flag=o5.Flag
+            local cb=o5.Callback or function() end; local val=math.clamp(o5.Default or mn,mn,mx)
+
+            local panel = getDefaultPanel()
+            local wrap = mk("Frame", {
+                Size=dim2(1,0,0,44), BackgroundTransparency=1, Parent=panel,
+            })
+
+            -- Top row: name + value
+            local topRow = mk("Frame", {
+                Size=dim2(1,0,0,18), BackgroundTransparency=1, Parent=wrap,
+            })
+            mk("TextLabel", {
+                Size=dim2(0.55,0,1,0), BackgroundTransparency=1, Text=nm,
+                TextColor3=C.Tx1, TextSize=13, Font=Enum.Font.GothamBold,
+                TextXAlignment=Enum.TextXAlignment.Left, Parent=topRow,
+            })
+            local ValBox = mk("Frame", {
+                Size=dim2(0,36,0,14), Position=dim2(1,-38,0.5,-7),
+                BackgroundColor3=C.BgRow, BorderSizePixel=0, Parent=topRow,
+            })
+            corner(ValBox, UDim.new(0,3))
+            local function fmtV(v)
+                if step<1 then
+                    local dec=math.max(0,math.ceil(-math.log10(step)))
+                    return string.format("%."..dec.."f",v)..suf
+                end
+                return tostring(v)..suf
+            end
+            local vLbl = mk("TextLabel", {
+                Size=dim2(1,0,1,0), BackgroundTransparency=1, Text=fmtV(val),
+                TextColor3=AC, TextSize=10, Font=Enum.Font.Code, Parent=ValBox,
+            })
+            regText(vLbl)
+
+            -- Track row
+            local trackRow = mk("Frame", {
+                Size=dim2(1,0,0,20), Position=dim2(0,0,0,22),
+                BackgroundTransparency=1, Parent=wrap,
+            })
+            local Track = mk("Frame", {
+                Size=dim2(1,-46,0,5), Position=dim2(0,0,0.5,-2.5),
+                BackgroundColor3=C.BgRow, BorderSizePixel=0, Parent=trackRow,
+            })
+            corner(Track, UDim.new(1,0))
+            local pct=(val-mn)/(mx-mn)
+            local Fill = mk("Frame", {
+                Size=dim2(pct,0,1,0), BackgroundColor3=AC,
+                BorderSizePixel=0, Parent=Track,
+            })
+            corner(Fill, UDim.new(1,0))
+            regFill(Fill)
+
+            local Knob = mk("Frame", {
+                Size=dim2(0,10,0,10), Position=dim2(pct,-10*pct,0.5,-5),
+                BackgroundColor3=C.White, BorderSizePixel=0, Parent=Track,
+            })
+            corner(Knob, UDim.new(1,0))
+
+            -- +/- buttons
+            local minusBtn = mk("TextButton", {
+                Size=dim2(0,18,0,18), Position=dim2(1,-42,0.5,-9),
+                BackgroundColor3=C.BgRow, Text="-", TextColor3=C.Tx1,
+                TextSize=14, Font=Enum.Font.GothamBold,
+                AutoButtonColor=false, BorderSizePixel=0, Parent=trackRow,
+            })
+            corner(minusBtn, UDim.new(0,3))
+            local plusBtn = mk("TextButton", {
+                Size=dim2(0,18,0,18), Position=dim2(1,-20,0.5,-9),
+                BackgroundColor3=C.BgRow, Text="+", TextColor3=C.Tx1,
+                TextSize=14, Font=Enum.Font.GothamBold,
+                AutoButtonColor=false, BorderSizePixel=0, Parent=trackRow,
+            })
+            corner(plusBtn, UDim.new(0,3))
+
+            local function sv(v, silent)
+                v=math.clamp(math.round(v/step)*step,mn,mx)
+                val=tonumber(string.format("%.10g",v))
+                local p=(mn==mx) and 0 or (val-mn)/(mx-mn)
+                tw(Fill,{Size=dim2(p,0,1,0)},0.04,Enum.EasingStyle.Linear)
+                Knob.Position=dim2(p,-10*p,0.5,-5)
+                vLbl.Text=fmtV(val)
+                if not silent then pcall(cb,val) end
+                if flag then _G[flag]=val end
+            end
+
+            local dragging=false
+            local Hit = mk("TextButton", {
+                Size=dim2(1,0,3,0), Position=dim2(0,0,-0.5,0),
+                BackgroundTransparency=1, Text="", AutoButtonColor=false, Parent=Track,
+            })
+            local function posToVal(absX)
+                return mn+(mx-mn)*math.clamp((absX-Track.AbsolutePosition.X)/Track.AbsoluteSize.X,0,1)
+            end
+            Hit.InputBegan:Connect(function(i)
+                if i.UserInputType==Enum.UserInputType.MouseButton1 then
+                    dragging=true; sv(posToVal(i.Position.X))
+                end
+            end)
+            UIS.InputChanged:Connect(function(i)
+                if dragging and i.UserInputType==Enum.UserInputType.MouseMovement then sv(posToVal(i.Position.X)) end
+            end)
+            UIS.InputEnded:Connect(function(i)
+                if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
+            end)
+            minusBtn.MouseButton1Click:Connect(function()
+                local mult=UIS:IsKeyDown(Enum.KeyCode.LeftShift) and 10 or 1; sv(val-step*mult)
+            end)
+            plusBtn.MouseButton1Click:Connect(function()
+                local mult=UIS:IsKeyDown(Enum.KeyCode.LeftShift) and 10 or 1; sv(val+step*mult)
+            end)
+
+            if flag then _G[flag]=val; CFGSYS.register(flag,function() return val end,function(v) sv(v,true) end,"number") end
+            local r={Value=val}; function r:Set(v) sv(v,true) end; function r:Get() return val end; return r
+        end
+
+        function CAT:AddDropdown(o5)
+            o5=o5 or {}
+            local nm=o5.Name or "Dropdown"; local opts=o5.Options or {}
+            local multi=o5.Multi or false; local flag=o5.Flag
+            local cb=o5.Callback or function() end
+            local sel=o5.Default or (opts[1] or ""); local msel={}
+
+            local panel = getDefaultPanel()
+            local wrap = mk("Frame", {
+                Size=dim2(1,0,0,46), BackgroundTransparency=1, Parent=panel,
+            })
+            mk("TextLabel", {
+                Size=dim2(1,0,0,14), BackgroundTransparency=1, Text=nm,
+                TextColor3=C.Tx2, TextSize=10, Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left, Parent=wrap,
+            })
+            local Hd = mk("TextButton", {
+                Size=dim2(1,0,0,26), Position=dim2(0,0,0,18),
+                BackgroundColor3=C.BgRow, Text="", AutoButtonColor=false,
+                BorderSizePixel=0, Parent=wrap,
+            })
+            corner(Hd, UDim.new(0,5))
+            local SelLbl = mk("TextLabel", {
+                Size=dim2(1,-22,1,0), Position=dim2(0,8,0,0),
+                BackgroundTransparency=1, Text=multi and "Select..." or tostring(sel),
+                TextColor3=C.Tx1, TextSize=12, Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left, Parent=Hd,
+            })
+            mk("TextLabel", {
+                Size=dim2(0,14,1,0), Position=dim2(1,-16,0,0),
+                BackgroundTransparency=1, Text="▾", TextColor3=C.Tx2,
+                TextSize=10, Font=Enum.Font.Gotham, Parent=Hd,
+            })
+
+            local isOpen=false
+            local function closeDD() isOpen=false; closeOV() end
+            local function buildDD(ov)
+                local ap=Hd.AbsolutePosition; local as=Hd.AbsoluteSize
+                local lh=math.min(#opts*26+8,160)
+                local px=math.min(ap.X, SG.AbsoluteSize.X-as.X-10)
+                local py=ap.Y+as.Y+4
+                if py+lh>SG.AbsoluteSize.Y-10 then py=ap.Y-lh-4 end
+                local pan=mk("Frame",{Size=dim2(0,as.X,0,0),Position=dim2(0,px,0,py),
+                    BackgroundColor3=C.BgSideBd,ZIndex=220,Parent=ov})
+                corner(pan,UDim.new(0,5))
+                tw(pan,{Size=dim2(0,as.X,0,lh)},0.14,Enum.EasingStyle.Back)
+                local sc=mk("ScrollingFrame",{Size=dim2(1,0,1,0),BackgroundTransparency=1,
+                    ScrollBarThickness=2,ScrollBarImageColor3=C.Toggle,CanvasSize=dim2(0,0,0,0),
+                    ZIndex=221,Parent=pan})
+                layout(sc,Enum.FillDirection.Vertical,2); padding(sc,4,4,4,4)
+                local scLL=sc:FindFirstChildOfClass("UIListLayout")
+                if scLL then scLL:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                    task.defer(function() if sc and sc.Parent then sc.CanvasSize=dim2(0,0,0,scLL.AbsoluteContentSize.Y+8) end end)
+                end) end
+                for _,op in ipairs(opts) do
+                    local isSel=multi and table.find(msel,op)~=nil or op==sel
+                    local ob=mk("TextButton",{Size=dim2(1,0,0,24),Text=op,
+                        BackgroundColor3=isSel and AC or C.BgRow,
+                        TextColor3=isSel and C.White or C.Tx1,
+                        TextSize=12,Font=Enum.Font.Gotham,AutoButtonColor=false,ZIndex=222,Parent=sc})
+                    corner(ob,UDim.new(0,4))
+                    ob.MouseEnter:Connect(function()
+                        if not(multi and table.find(msel,op)) and op~=sel then
+                            tw(ob,{BackgroundColor3=C.BgGroupH,TextColor3=C.Tx0},0.08)
+                        end
+                    end)
+                    ob.MouseLeave:Connect(function()
+                        local s2=multi and table.find(msel,op)~=nil or op==sel
+                        ob.BackgroundColor3=s2 and AC or C.BgRow
+                        ob.TextColor3=s2 and C.White or C.Tx1
+                    end)
+                    ob.MouseButton1Click:Connect(function()
+                        if multi then
+                            local idx=table.find(msel,op)
+                            if idx then table.remove(msel,idx) else table.insert(msel,op) end
+                            SelLbl.Text=#msel>0 and table.concat(msel,", ") or "Select..."
+                            pcall(cb,msel); if flag then _G[flag]=msel end
+                        else
+                            sel=op; SelLbl.Text=op; pcall(cb,op)
+                            if flag then _G[flag]=op end; closeDD()
+                        end
+                    end)
+                end
+            end
+            Hd.MouseButton1Click:Connect(function()
+                isOpen=not isOpen
+                if isOpen then openOV(buildDD) else closeDD() end
+            end)
+
+            if flag then _G[flag]=sel; CFGSYS.register(flag,function() return sel end,function(v) sel=v;SelLbl.Text=v;if flag then _G[flag]=v end end,"string") end
+            local r={Value=sel}
+            function r:Set(v) sel=v; SelLbl.Text=v end
+            function r:SetOptions(t) opts=t end
+            function r:Get() return multi and msel or sel end
+            return r
+        end
+
+        function CAT:AddKeybind(o5)
+            o5=o5 or {}
+            local nm=o5.Name or "Keybind"; local key=o5.Default or Enum.KeyCode.Unknown
+            local flag=o5.Flag; local cb=o5.Callback or function() end; local listening=false
+
+            local panel = getDefaultPanel()
+            local row = mkRow(panel, 28)
+
+            mk("TextLabel", {
+                Size=dim2(1,-92,1,0), BackgroundTransparency=1, Text=nm,
+                TextColor3=C.Tx1, TextSize=13, Font=Enum.Font.GothamBold,
+                TextXAlignment=Enum.TextXAlignment.Left, Parent=row,
+            })
+            local Kb = mk("TextButton", {
+                Size=dim2(0,84,0,18), Position=dim2(1,-86,0.5,-9),
+                BackgroundColor3=C.BgRow, TextColor3=AC,
+                Text=keyName(key), TextSize=10, Font=Enum.Font.GothamBold,
+                AutoButtonColor=false, BorderSizePixel=0, Parent=row,
+            })
+            corner(Kb, UDim.new(0,4))
+            onAC(function(c) if not listening then Kb.TextColor3=c end end)
+            Kb.MouseButton1Click:Connect(function()
+                if listening then return end
+                listening=true; Kb.Text="..."; Kb.TextColor3=rgb(255,185,0)
+                Kb.BackgroundColor3=rgb(28,24,10)
+            end)
+            UIS.InputBegan:Connect(function(i, gpe)
+                if listening and not gpe and (i.UserInputType==Enum.UserInputType.Keyboard or isMouseButton(i.UserInputType)) then
+                    key=isMouseButton(i.UserInputType) and i.UserInputType or i.KeyCode
+                    Kb.Text=keyName(key); Kb.TextColor3=AC; Kb.BackgroundColor3=C.BgRow; listening=false
+                elseif not listening and not gpe and (i.KeyCode==key or i.UserInputType==key) and key~=Enum.KeyCode.Unknown then
+                    pcall(cb); if flag then _G[flag]=key end
+                end
+            end)
+
+            if flag then _G[flag]=key; CFGSYS.register(flag,function() return key end,function(k) key=k;Kb.Text=keyName(k) end,"key") end
+            local r={Value=key}; function r:Set(k) key=k;Kb.Text=keyName(k) end; function r:Get() return key end; return r
+        end
+
+        function CAT:AddButton(o5)
+            o5=o5 or {}
+            local nm=o5.Name or "Button"; local cb=o5.Callback or function() end
+            local panel = getDefaultPanel()
+            local Btn = mk("TextButton", {
+                Size=dim2(1,0,0,28), BackgroundColor3=C.BgGroupH,
+                Text=nm, TextColor3=C.Tx1, TextSize=13, Font=Enum.Font.GothamBold,
+                AutoButtonColor=false, BorderSizePixel=0, Parent=panel,
+            })
+            corner(Btn, UDim.new(0,5))
+            Btn.MouseEnter:Connect(function() tw(Btn,{BackgroundColor3=C.BgRow,TextColor3=C.Tx0},0.1) end)
+            Btn.MouseLeave:Connect(function() tw(Btn,{BackgroundColor3=C.BgGroupH,TextColor3=C.Tx1},0.1) end)
+            Btn.MouseButton1Down:Connect(function() tw(Btn,{BackgroundColor3=AC,TextColor3=C.White},0.07) end)
+            Btn.MouseButton1Up:Connect(function() tw(Btn,{BackgroundColor3=C.BgRow,TextColor3=C.Tx0},0.14) end)
+            Btn.MouseButton1Click:Connect(function() task.delay(0.18,function() tw(Btn,{BackgroundColor3=C.BgGroupH,TextColor3=C.Tx1},0.14) end); pcall(cb) end)
+            onAC(function(c) end) -- placeholder for accent-colored buttons if needed
+            local r={}; function r:SetText(t) Btn.Text=t end; return r
+        end
+
+        function CAT:AddLabel(o5)
+            o5=o5 or {}
+            local panel = getDefaultPanel()
+            local Lbl = mk("TextLabel", {
+                Size=dim2(1,0,0,0), AutomaticSize=Enum.AutomaticSize.Y,
+                BackgroundTransparency=1, Text=o5.Text or "",
+                TextColor3=o5.Color or C.Tx2, TextSize=o5.Size or 11,
+                Font=Enum.Font.Gotham, TextXAlignment=Enum.TextXAlignment.Left,
+                TextWrapped=true, Parent=panel,
+            })
+            local r={}; function r:Set(t) Lbl.Text=t end; function r:Get() return Lbl.Text end; return r
+        end
+
+        function CAT:AddSeparator()
+            local panel = getDefaultPanel()
+            local sep = mk("Frame", {
+                Size=dim2(1,0,0,1), BackgroundColor3=C.BgGroupH,
+                BackgroundTransparency=0.4, Parent=panel,
+            })
+            mk("UIGradient", {
+                Transparency=NumberSequence.new({
+                    NumberSequenceKeypoint.new(0,1),
+                    NumberSequenceKeypoint.new(0.05,0),
+                    NumberSequenceKeypoint.new(0.95,0),
+                    NumberSequenceKeypoint.new(1,1),
+                }), Parent=sep,
+            })
+        end
+
+        function CAT:AddTextbox(o5)
+            o5=o5 or {}
+            local nm=o5.Name or "Input"; local cb=o5.Callback or function() end; local flag=o5.Flag
+            local panel = getDefaultPanel()
+            local wrap = mk("Frame", {Size=dim2(1,0,0,46), BackgroundTransparency=1, Parent=panel})
+            mk("TextLabel", {
+                Size=dim2(1,0,0,14), BackgroundTransparency=1, Text=nm,
+                TextColor3=C.Tx2, TextSize=10, Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left, Parent=wrap,
+            })
+            local ifrm = mk("Frame", {
+                Size=dim2(1,0,0,26), Position=dim2(0,0,0,18),
+                BackgroundColor3=C.BgRow, BorderSizePixel=0, Parent=wrap,
+            })
+            corner(ifrm, UDim.new(0,5))
+            local tb = mk("TextBox", {
+                Size=dim2(1,-10,1,0), Position=dim2(0,6,0,0),
+                BackgroundTransparency=1, PlaceholderText=o5.Placeholder or "type here...",
+                Text=o5.Default or "", TextColor3=C.Tx0, PlaceholderColor3=C.Tx2,
+                TextSize=12, Font=Enum.Font.Gotham,
+                TextXAlignment=Enum.TextXAlignment.Left, ClearTextOnFocus=false, Parent=ifrm,
+            })
+            tb.Focused:Connect(function() tw(ifrm,{BackgroundColor3=C.BgGroupH},0.1) end)
+            tb.FocusLost:Connect(function() tw(ifrm,{BackgroundColor3=C.BgRow},0.1); pcall(cb,tb.Text); if flag then _G[flag]=tb.Text end end)
+            if flag then _G[flag]=o5.Default or ""; CFGSYS.register(flag,function() return tb.Text end,function(v) tb.Text=tostring(v) end,"string") end
+            local r={}; function r:Set(v) tb.Text=v end; function r:Get() return tb.Text end; return r
+        end
+
+        function CAT:AddColorPicker(o5)
+            o5=o5 or {}
+            local nm=o5.Name or "Color"; local col=o5.Default or rgb(255,80,80)
+            local flag=o5.Flag; local cb=o5.Callback or function() end
+            local h,s,v=Color3.toHSV(col)
+
+            local panel = getDefaultPanel()
+            local row = mkRow(panel, 28)
+            mk("TextLabel", {
+                Size=dim2(1,-46,1,0), BackgroundTransparency=1, Text=nm,
+                TextColor3=C.Tx1, TextSize=13, Font=Enum.Font.GothamBold,
+                TextXAlignment=Enum.TextXAlignment.Left, Parent=row,
+            })
+            local Sw = mk("TextButton", {
+                Size=dim2(0,36,0,20), Position=dim2(1,-38,0.5,-10),
+                BackgroundColor3=col, Text="", AutoButtonColor=false,
+                BorderSizePixel=0, Parent=row,
+            })
+            corner(Sw, UDim.new(0,5))
+
+            -- Simple color picker popup
+            local open=false
+            Sw.MouseButton1Click:Connect(function()
+                open=not open
+                if open then
+                    openOV(function(ov)
+                        local ch2,cs2,cv2 = h,s,v
+                        local pw,ph = 200,140
+                        local ap=Sw.AbsolutePosition
+                        local px=math.min(ap.X,SG.AbsoluteSize.X-pw-10)
+                        local py=ap.Y+Sw.AbsoluteSize.Y+6
+                        if py+ph>SG.AbsoluteSize.Y-10 then py=ap.Y-ph-6 end
+                        local pan=mk("Frame",{Size=dim2(0,pw,0,ph),Position=dim2(0,px,0,py),
+                            BackgroundColor3=C.BgSideBd,ZIndex=220,Parent=ov})
+                        corner(pan,UDim.new(0,6))
+
+                        -- SV box
+                        local svbg=mk("Frame",{Size=dim2(1,-12,0,80),Position=dim2(0,6,0,6),
+                            BackgroundColor3=Color3.fromHSV(ch2,1,1),ZIndex=221,Parent=pan})
+                        corner(svbg,UDim.new(0,4))
+                        local wg=mk("Frame",{Size=dim2(1,0,1,0),BackgroundColor3=rgb(255,255,255),ZIndex=222,Parent=svbg})
+                        corner(wg,UDim.new(0,4))
+                        mk("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)}),Parent=wg})
+                        local bgf=mk("Frame",{Size=dim2(1,0,1,0),BackgroundColor3=rgb(0,0,0),ZIndex=223,Parent=svbg})
+                        corner(bgf,UDim.new(0,4))
+                        mk("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}),Rotation=90,Parent=bgf})
+                        local svc=mk("TextButton",{AutoButtonColor=false,Text="",AnchorPoint=Vector2.new(.5,.5),
+                            Size=dim2(0,9,0,9),Position=dim2(cs2,0,1-cv2,0),
+                            BackgroundColor3=rgb(255,255,255),ZIndex=226,Parent=svbg})
+                        corner(svc,UDim.new(1,0))
+
+                        -- Hue bar
+                        local hueBar=mk("TextButton",{AutoButtonColor=false,Text="",
+                            Size=dim2(1,-12,0,8),Position=dim2(0,6,0,92),ZIndex=221,Parent=pan})
+                        corner(hueBar,UDim.new(1,0))
+                        mk("UIGradient",{Color=ColorSequence.new({
+                            ColorSequenceKeypoint.new(0,rgb(255,0,0)),ColorSequenceKeypoint.new(0.17,rgb(255,255,0)),
+                            ColorSequenceKeypoint.new(0.33,rgb(0,255,0)),ColorSequenceKeypoint.new(0.5,rgb(0,255,255)),
+                            ColorSequenceKeypoint.new(0.67,rgb(0,0,255)),ColorSequenceKeypoint.new(0.83,rgb(255,0,255)),
+                            ColorSequenceKeypoint.new(1,rgb(255,0,0))}),Parent=hueBar})
+                        local hueCur=mk("Frame",{AnchorPoint=Vector2.new(.5,.5),Size=dim2(0,8,1,2),
+                            Position=dim2(ch2,0,.5,0),BackgroundColor3=rgb(255,255,255),ZIndex=223,Parent=hueBar})
+                        corner(hueCur,UDim.new(0,2))
+
+                        local prev=mk("Frame",{Size=dim2(1,-12,0,12),Position=dim2(0,6,0,106),
+                            BackgroundColor3=Color3.fromHSV(ch2,cs2,cv2),ZIndex=221,Parent=pan})
+                        corner(prev,UDim.new(0,4))
+
+                        local function updPicker()
+                            local nc=Color3.fromHSV(ch2,cs2,cv2)
+                            svbg.BackgroundColor3=Color3.fromHSV(ch2,1,1)
+                            svc.Position=dim2(cs2,0,1-cv2,0)
+                            hueCur.Position=dim2(ch2,0,.5,0)
+                            prev.BackgroundColor3=nc
+                            col=nc; h,s,v=ch2,cs2,cv2; Sw.BackgroundColor3=nc
+                            pcall(cb,nc); if flag then _G[flag]=nc end
+                        end
+                        local dSV,dHue=false,false
+                        svbg.InputBegan:Connect(function(i)
+                            if i.UserInputType==Enum.UserInputType.MouseButton1 then
+                                dSV=true
+                                cs2=math.clamp((i.Position.X-svbg.AbsolutePosition.X)/svbg.AbsoluteSize.X,0,1)
+                                cv2=1-math.clamp((i.Position.Y-svbg.AbsolutePosition.Y)/svbg.AbsoluteSize.Y,0,1)
+                                updPicker()
+                            end
+                        end)
+                        hueBar.InputBegan:Connect(function(i)
+                            if i.UserInputType==Enum.UserInputType.MouseButton1 then
+                                dHue=true
+                                ch2=math.clamp((i.Position.X-hueBar.AbsolutePosition.X)/hueBar.AbsoluteSize.X,0,1)
+                                updPicker()
+                            end
+                        end)
+                        UIS.InputChanged:Connect(function(i)
+                            if i.UserInputType~=Enum.UserInputType.MouseMovement then return end
+                            if dSV then
+                                cs2=math.clamp((i.Position.X-svbg.AbsolutePosition.X)/svbg.AbsoluteSize.X,0,1)
+                                cv2=1-math.clamp((i.Position.Y-svbg.AbsolutePosition.Y)/svbg.AbsoluteSize.Y,0,1)
+                                updPicker()
+                            end
+                            if dHue then
+                                ch2=math.clamp((i.Position.X-hueBar.AbsolutePosition.X)/hueBar.AbsoluteSize.X,0,1)
+                                updPicker()
+                            end
+                        end)
+                        UIS.InputEnded:Connect(function(i)
+                            if i.UserInputType==Enum.UserInputType.MouseButton1 then dSV=false;dHue=false end
+                        end)
+                    end)
+                else closeOV() end
+            end)
+
+            if flag then _G[flag]=col; CFGSYS.register(flag,function() return col end,function(c2) col=c2;h,s,v=Color3.toHSV(c2);Sw.BackgroundColor3=c2;pcall(cb,c2) end,"color") end
+            local r={Value=col}; function r:Set(c2) col=c2;h,s,v=Color3.toHSV(c2);Sw.BackgroundColor3=c2 end; function r:Get() return col end; return r
+        end
+
+        function CAT:AddProgressBar(o5)
+            o5=o5 or {}
+            local nm=o5.Name or "Progress"; local maxV=o5.Max or 100; local cur=math.clamp(o5.Default or 0,0,maxV)
+            local panel = getDefaultPanel()
+            local wrap = mk("Frame", {Size=dim2(1,0,0,38), BackgroundTransparency=1, Parent=panel})
+            local topRow = mk("Frame", {Size=dim2(1,0,0,16), BackgroundTransparency=1, Parent=wrap})
+            mk("TextLabel",{Size=dim2(1,-40,1,0),BackgroundTransparency=1,Text=nm,TextColor3=C.Tx1,TextSize=12,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left,Parent=topRow})
+            local pctLbl=mk("TextLabel",{Size=dim2(0,36,1,0),Position=dim2(1,-38,0,0),BackgroundTransparency=1,Text=math.round(cur/maxV*100).."%",TextColor3=AC,TextSize=11,Font=Enum.Font.Code,Parent=topRow})
+            regText(pctLbl)
+            local trk=mk("Frame",{Size=dim2(1,0,0,4),Position=dim2(0,0,0,22),BackgroundColor3=C.BgRow,BorderSizePixel=0,Parent=wrap}); corner(trk,UDim.new(1,0))
+            local fill2=mk("Frame",{Size=dim2(cur/maxV,0,1,0),BackgroundColor3=AC,BorderSizePixel=0,Parent=trk}); corner(fill2,UDim.new(1,0)); regFill(fill2)
+            local r={Value=cur}
+            function r:Set(v) v=math.clamp(v,0,maxV);cur=v;tw(fill2,{Size=dim2(v/maxV,0,1,0)},0.2);pctLbl.Text=math.round(v/maxV*100).."%" end
+            function r:Get() return cur end; return r
+        end
+
+        -- Expose addSubTab so power users can create sub-pages
+        CAT.AddSubTab = function(self2, label)
+            return addSubTab(label)
+        end
+
+        -- Initial activation
+        if isFirst then
+            task.defer(function() SetActiveTab(catKey) end)
+        end
+
+        return CAT
+    end
+
+    -- ── Settings / Config button in content header
+    -- (Attach a small config button to the subtab bar area)
+    local cfgToggleBtn = mk("TextButton", {
+        Size=dim2(0,64,0,28), Position=dim2(1,-72,0,8),
+        BackgroundColor3=C.BgGroupH, Text="Configs", TextColor3=C.Tx1,
+        TextSize=10, Font=Enum.Font.GothamBold,
+        AutoButtonColor=false, BorderSizePixel=0, ZIndex=55, Parent=Main,
+    })
+    corner(cfgToggleBtn, UDim.new(0,4))
+    cfgToggleBtn.MouseButton1Click:Connect(function()
+        CfgPanel.Visible=not CfgPanel.Visible
+        if CfgPanel.Visible then refreshCfgList() end
+    end)
+
+    -- Accent color button
+    local accentBtn = mk("TextButton", {
+        Size=dim2(0,18,0,18), Position=dim2(1,-98,0,13),
+        BackgroundColor3=AC, Text="", AutoButtonColor=false,
+        BorderSizePixel=0, ZIndex=55, Parent=Main,
+    })
+    corner(accentBtn, UDim.new(1,0))
+    onAC(function(c) accentBtn.BackgroundColor3=c end)
+    accentBtn.MouseButton1Click:Connect(function()
+        openOV(function(ov)
+            local ch2,cs2,cv2=Color3.toHSV(AC)
+            local pw,ph=200,140
+            local ap=accentBtn.AbsolutePosition
+            local px=math.min(ap.X, SG.AbsoluteSize.X-pw-10)
+            local py=ap.Y+accentBtn.AbsoluteSize.Y+6
+            if py+ph>SG.AbsoluteSize.Y-10 then py=ap.Y-ph-6 end
+            local pan=mk("Frame",{Size=dim2(0,pw,0,ph),Position=dim2(0,px,0,py),
+                BackgroundColor3=C.BgSideBd,ZIndex=220,Parent=ov}); corner(pan,UDim.new(0,6))
+            local svbg=mk("Frame",{Size=dim2(1,-12,0,80),Position=dim2(0,6,0,6),
+                BackgroundColor3=Color3.fromHSV(ch2,1,1),ZIndex=221,Parent=pan}); corner(svbg,UDim.new(0,4))
+            local wg=mk("Frame",{Size=dim2(1,0,1,0),BackgroundColor3=rgb(255,255,255),ZIndex=222,Parent=svbg}); corner(wg,UDim.new(0,4))
+            mk("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)}),Parent=wg})
+            local bgf=mk("Frame",{Size=dim2(1,0,1,0),BackgroundColor3=rgb(0,0,0),ZIndex=223,Parent=svbg}); corner(bgf,UDim.new(0,4))
+            mk("UIGradient",{Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}),Rotation=90,Parent=bgf})
+            local svc=mk("TextButton",{AutoButtonColor=false,Text="",AnchorPoint=Vector2.new(.5,.5),
+                Size=dim2(0,9,0,9),Position=dim2(cs2,0,1-cv2,0),BackgroundColor3=rgb(255,255,255),ZIndex=226,Parent=svbg}); corner(svc,UDim.new(1,0))
+            local hueBar=mk("TextButton",{AutoButtonColor=false,Text="",Size=dim2(1,-12,0,8),
+                Position=dim2(0,6,0,92),ZIndex=221,Parent=pan}); corner(hueBar,UDim.new(1,0))
+            mk("UIGradient",{Color=ColorSequence.new({ColorSequenceKeypoint.new(0,rgb(255,0,0)),ColorSequenceKeypoint.new(0.17,rgb(255,255,0)),ColorSequenceKeypoint.new(0.33,rgb(0,255,0)),ColorSequenceKeypoint.new(0.5,rgb(0,255,255)),ColorSequenceKeypoint.new(0.67,rgb(0,0,255)),ColorSequenceKeypoint.new(0.83,rgb(255,0,255)),ColorSequenceKeypoint.new(1,rgb(255,0,0))}),Parent=hueBar})
+            local hueCur=mk("Frame",{AnchorPoint=Vector2.new(.5,.5),Size=dim2(0,8,1,2),Position=dim2(ch2,0,.5,0),BackgroundColor3=rgb(255,255,255),ZIndex=223,Parent=hueBar}); corner(hueCur,UDim.new(0,2))
+            local prev=mk("Frame",{Size=dim2(1,-12,0,12),Position=dim2(0,6,0,106),BackgroundColor3=Color3.fromHSV(ch2,cs2,cv2),ZIndex=221,Parent=pan}); corner(prev,UDim.new(0,4))
+            local function updAC()
+                local nc=Color3.fromHSV(ch2,cs2,cv2)
+                svbg.BackgroundColor3=Color3.fromHSV(ch2,1,1)
+                svc.Position=dim2(cs2,0,1-cv2,0)
+                hueCur.Position=dim2(ch2,0,.5,0)
+                prev.BackgroundColor3=nc
+                setAC(nc)
+            end
+            local dSV,dHue=false,false
+            svbg.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dSV=true; cs2=math.clamp((i.Position.X-svbg.AbsolutePosition.X)/svbg.AbsoluteSize.X,0,1); cv2=1-math.clamp((i.Position.Y-svbg.AbsolutePosition.Y)/svbg.AbsoluteSize.Y,0,1); updAC() end end)
+            hueBar.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dHue=true; ch2=math.clamp((i.Position.X-hueBar.AbsolutePosition.X)/hueBar.AbsoluteSize.X,0,1); updAC() end end)
+            UIS.InputChanged:Connect(function(i) if i.UserInputType~=Enum.UserInputType.MouseMovement then return end; if dSV then cs2=math.clamp((i.Position.X-svbg.AbsolutePosition.X)/svbg.AbsoluteSize.X,0,1); cv2=1-math.clamp((i.Position.Y-svbg.AbsolutePosition.Y)/svbg.AbsoluteSize.Y,0,1); updAC() end; if dHue then ch2=math.clamp((i.Position.X-hueBar.AbsolutePosition.X)/hueBar.AbsoluteSize.X,0,1); updAC() end end)
+            UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dSV=false;dHue=false end end)
+        end)
+    end)
+
+    -- Animate in
+    task.defer(function()
+        Main.Visible=true
+        Main.Size=dim2(0,WIN_W*0.88,0,WIN_H*0.88)
+        tw(Main,{Size=dim2(0,WIN_W,0,WIN_H)},0.24,Enum.EasingStyle.Quint,Enum.EasingDirection.Out)
+    end)
+
+    function WO:SetAccent(c) setAC(c) end
+    function WO:Toggle() _vis=not _vis; Main.Visible=_vis; CfgPanel.Visible=false end
+    function WO:Destroy() SG:Destroy() end
+    function WO:SetConfigName(n) CFG.ConfigName=n end
+    function WO:SaveConfig(n) return CFGSYS.save(n or CFG.ConfigName) end
+    function WO:LoadConfig(n) return CFGSYS.load(n or CFG.ConfigName) end
+
+    return WO
+end
+
+return Peleccos
